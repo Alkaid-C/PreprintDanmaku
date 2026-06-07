@@ -1,0 +1,159 @@
+# ============================================================
+#  DanmakuHime 配置文件
+# ------------------------------------------------------------
+#  改完保存，重新运行 python3 app.py 即可生效。
+#
+#  填写规则：
+#    · 文字要用英文双引号包起来，例如  guard_name = "埃抖露"
+#    · 数字直接写，不要加引号，例如    port = 19216
+#    · true / false 用来表示「是 / 否」，全小写、不加引号
+#    · # 号开头的是注释，给你看的，程序会忽略
+#    · 改坏了也不怕：程序读不动这个文件时会自动用内置默认值并提示
+#
+#  ⚠ 文件下半部分「高级设置」用了成组的 [方括号] 段落，
+#    新手通常不用动。如果要加普通设置，请加在上半部分、
+#    任何 [方括号] 段落出现之前，否则会被算进那个段落里。
+# ============================================================
+
+
+# ———————————————— 直播间 ————————————————
+
+# 直播间号（B 站直播间网址 live.bilibili.com/ 后面那串数字）
+room_id = 1880057770
+
+# 对大航海（舰长/提督/总督）成员的称呼
+guard_name = "埃抖露"
+
+
+# ———————————————— 网页服务 ————————————————
+
+# 监听地址，本机访问保持 127.0.0.1 即可
+host = "127.0.0.1"
+# 网页端口，浏览器打开 http://127.0.0.1:端口/
+port = 19216
+
+
+# ———————————————— 论文刊头（页面顶部的“论文”信息）————————————————
+
+# 右上角的来源印章文字
+stamp_label = "Bilibili"
+# 预印本编号（一般填直播间号）
+preprint_id = "1921712061"
+# 学科分类
+category = "虚拟.日常"
+# 论文标题
+title = "灰域梦游的现象学考察"
+
+
+# ———————————————— 输出文件名 ————————————————
+# 这些文件都生成在 app.py 所在的目录里，一般不用改
+
+# 弹幕事件流水记录
+event_log_file = "DanmakuHime-弹幕事件记录.txt"
+# 每场直播结束时的礼物统计
+stats_output_file = "DanmakuHime-今日直播礼物统计.txt"
+# 登录二维码图片
+qr_image_file = "bilibili_login_qr.png"
+# 登录凭证（含自动刷新所需信息，请勿外传）
+credential_file = "credential.json"
+# 运行日志（控制台同样的内容会追加写到这里，方便事后回溯）
+log_file = "DanmakuHime-运行日志.txt"
+
+
+# ============================================================
+#  高级设置（不熟悉就保持默认，下面开始都是 [方括号] 段落）
+# ============================================================
+
+# ———————————————— 登录与凭证 ————————————————
+[advanced]
+# 扫码登录时的轮询间隔（秒）
+login_poll_interval_seconds = 2
+# 登录失败后的重试等待（秒）
+login_retry_delay_seconds = 5
+# 凭证「这么久以内」直接使用（秒），默认 24 小时
+credential_load_max_age_seconds = 86400
+# 凭证「这么久以内」自动刷新、超过则重新扫码（秒），默认 7 天
+credential_refresh_max_age_seconds = 604800
+
+# 服务器推流（SSE）缓冲
+# 回放给新进观众的历史事件条数
+history_size = 120
+# 单个观众的事件队列上限（满了丢最旧的）
+subscriber_queue_size = 300
+# 心跳间隔（秒），保持连接不被中间网络掐断
+sse_heartbeat_seconds = 20
+
+# 断线重连与提示停留
+# 断线后多久重连（秒）
+reconnect_delay_seconds = 3
+# “正在重连”提示在画面上停留多久（秒）
+reconnect_notice_dwell_seconds = 12
+# 直播结束统计报告停留多久（秒）
+stream_end_report_dwell_seconds = 20
+# 是否把后端报错转发到页面上显示（排查问题时用）
+debug_forward_errors = false
+# 报错提示停留多久（秒）
+debug_error_dwell_seconds = 30
+
+# 金额换算（一般不要动，改错会导致金额显示错误）
+# 礼物单价从「毫元」换算成「元」的除数
+gift_price_to_yuan_divisor = 1000
+# 一元等于多少分
+cents_per_yuan = 100
+# SuperChat 金额低于此值显示为 Remark，达到/超过显示为 Observation（元）
+superchat_observation_threshold_yuan = 30
+
+
+# 大航海置顶停留时长（秒），按等级：1=舰长 2=提督 3=总督
+[advanced.guard_dwell_seconds_by_schema_level]
+1 = 60
+2 = 600
+3 = 3600
+
+
+# ———————————————— 作者列表 ————————————————
+# 每位作者一段 [[authors]]，可增删。
+#   name          = 显示名
+#   affiliation   = 单位 / 所属
+#   corresponding = 是否通讯作者（true / false）
+
+[[authors]]
+name = "埃瑟斯Asuse"
+affiliation = "环角事务所"
+corresponding = false
+
+[[authors]]
+name = "埃斯卡尔Askr"
+affiliation = "环角事务所"
+corresponding = true
+
+
+# ———————————————— SuperChat 置顶停留档位 ————————————————
+# 按金额分档决定 SC 在画面顶部停留多久。
+#   below        = 金额低于这个数（元）时适用本档
+#   dwell_seconds= 停留秒数
+# 从上到下匹配第一个满足的档；最后一档不写 below，表示「以上全部」。
+
+[[superchat_dwell_tiers]]
+below = 50
+dwell_seconds = 60
+
+[[superchat_dwell_tiers]]
+below = 100
+dwell_seconds = 120
+
+[[superchat_dwell_tiers]]
+below = 500
+dwell_seconds = 300
+
+[[superchat_dwell_tiers]]
+below = 1000
+dwell_seconds = 1800
+
+[[superchat_dwell_tiers]]
+below = 2000
+dwell_seconds = 3600
+
+# 2000 元及以上
+[[superchat_dwell_tiers]]
+dwell_seconds = 7200

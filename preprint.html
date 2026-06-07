@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>弹幕预印本 · Danmaku Preprint</title>
+
+<!-- Tinos (latin serif) + Noto Serif SC (CJK), served locally from ./fonts/google -->
+<link rel="stylesheet" href="fonts/google/fonts.css" />
+
+<style>
+  :root {
+    --cm: "Tinos";
+    --cjk: "Noto Serif SC";
+    --serif: var(--cm), var(--cjk);
+  }
+  html, body { margin: 0; height: 100%; background: #e7e5df; }
+  * { box-sizing: border-box; }
+
+  /* ------------------------------------------------------- delivery frame */
+  .page {
+    min-height: 100vh;
+    display: flex; justify-content: center; align-items: stretch;
+    background: #e7e5df;
+  }
+  .widget {
+    width: 1200px; height: 100vh;
+    box-shadow: 0 0 120px rgba(0,0,0,.10);
+  }
+
+  /* ---------------------------------------------------------- feed root */
+  .dm-root {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    overflow: hidden;
+    box-shadow: inset 0 0 0 3px var(--rule);
+  }
+  .dm-vignette { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+
+  .dm-stamp {
+    flex: 0 0 auto;
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 30px; white-space: nowrap;
+    font-family: var(--cm);
+    font-size: 27px; letter-spacing: .02em;
+    color: var(--ink-soft);
+    padding: 24px 48px 0;
+  }
+  .dm-stamp-id { font-family: var(--cm); letter-spacing: .02em; }
+
+  /* ------------------------------------------------------------ masthead */
+  .dm-head { flex: 0 0 auto; padding: 6px 60px 0; text-align: center; }
+  .dm-title {
+    font-family: var(--serif);
+    font-weight: 700;
+    font-size: 69px; line-height: 1.08;
+    margin: 6px 0 0; letter-spacing: .01em;
+    text-wrap: balance;
+  }
+  .dm-authors {
+    font-family: var(--serif);
+    font-size: 37.5px; margin-top: 8px;
+  }
+  .dm-corr { font-family: var(--cm); }
+
+  /* -------------------------------------------------------- section rule */
+  .dm-secrule {
+    flex: 0 0 auto;
+    position: relative;
+    margin: 30px 60px 12px;
+    text-align: center;
+  }
+  .dm-secrule::before {
+    content: ""; position: absolute; top: 50%; left: 0; right: 0;
+    border-top: 3px solid var(--rule);
+  }
+  .dm-secrule span {
+    position: relative;
+    background: var(--paper);
+    padding: 0 30px;
+    font-family: var(--serif);
+    font-weight: 600; font-size: 36px;
+  }
+
+  /* ------------------------------------------------------------- feed box */
+  .dm-feed {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 54px;
+  }
+  .dm-feed-mask {
+    position: absolute; top: 0; left: 0; right: 0; height: 138px;
+    z-index: 2; pointer-events: none;
+    background: linear-gradient(var(--paper), transparent);
+  }
+  /* anchor newest at the bottom; older entries slide up & clip out the top */
+  .dm-stack {
+    position: absolute; left: 54px; right: 54px; bottom: 24px;
+    display: flex; flex-direction: column; gap: 27px;
+  }
+  .dm-slot { animation: dm-enter .55s cubic-bezier(.2,.7,.3,1) both; }
+  @keyframes dm-enter {
+    from { opacity: 0; transform: translateY(27px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dm-slot { animation: none; }
+  }
+
+  /* ------------------------------------ shared row + left-margin line no. */
+  .dm-row {
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    column-gap: 18px;
+    font-family: var(--serif);
+    font-size: 37.5px; line-height: 1.5;
+  }
+  .dm-ln {
+    font-family: var(--cm);
+    font-variant-numeric: tabular-nums;
+    font-size: 28.5px;
+    color: var(--lineno);
+    text-align: right;
+    padding-top: 9px;
+    user-select: none;
+  }
+  .dm-content { text-align: left; hyphens: auto; }
+
+  /* -------------------------------------------- normal = cited remark line */
+  .dm-author { font-weight: 600; }
+  .dm-guard { font-family: var(--cm); color: var(--accent); font-size: .72em; }
+  .dm-sep { color: var(--ink-soft); }
+  .dm-quote { font-family: var(--serif); font-weight: 600; }
+  .dm-venue { font-size: .92em; color: var(--ink-soft); }
+  .dm-journal { font-family: var(--serif); font-style: italic; white-space: nowrap; }
+  .dm-tail { white-space: nowrap; font-family: var(--cm); font-variant-numeric: tabular-nums; }
+  .dm-preprint { letter-spacing: .01em; }
+
+  /* --------------------------------------- gift = funding acknowledgement */
+  .dm-fund .dm-content {
+    position: relative;
+    margin-top: 15px; padding-top: 24px;
+    font-size: 36px; line-height: 1.5;
+    color: var(--ink);
+    text-align: left;
+  }
+  .dm-fund .dm-content::before {     /* short footnote rule */
+    content: ""; position: absolute; top: 0; left: 0;
+    width: 144px; border-top: 3px solid var(--rule);
+  }
+  .dm-fund-tag {
+    font-family: var(--cm);
+    font-weight: 700; font-variant: small-caps; letter-spacing: .03em;
+    color: var(--accent);
+  }
+  .dm-fund-body em { font-style: italic; font-family: var(--serif); }
+  .dm-grant { font-family: var(--cm); font-variant-numeric: tabular-nums; }
+
+  /* ----------------------------------- collapse wrapper (ack + pinned in/out) */
+  .dm-collapse { overflow: hidden; transition: height .32s cubic-bezier(.2,.7,.3,1), opacity .3s ease; }
+
+  /* ----------------------------- pinned results (superchat / 上船 = boxes) */
+  .dm-pinned {
+    flex: 0 0 auto;
+    padding: 24px 54px 6px;
+    display: flex; flex-direction: column; gap: 21px;
+  }
+  .dm-pin-slot { padding-bottom: 21px; }
+
+  /* boxed result (Remark / Lemma / Proposition / Theorem) */
+  .dm-thm {
+    position: relative;
+    border: 3px solid var(--box-rule);
+    background: var(--box-bg);
+    padding: 27px 33px 27px;
+    box-shadow: 6px 6px 0 0 color-mix(in srgb, var(--box-rule) 16%, transparent);
+  }
+  .dm-pin-timer {
+    position: absolute; top: 0; left: 0; right: 0; height: 6px;
+    background: var(--accent); transform-origin: left;
+    animation-name: dm-pin-countdown; animation-timing-function: linear; animation-fill-mode: forwards;
+  }
+  @keyframes dm-pin-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) { .dm-pin-timer { display: none; } }
+  .dm-thm-head { font-size: 37.5px; line-height: 1.35; }
+  .dm-thm-label {
+    font-family: var(--cm);
+    font-weight: 700; font-variant: small-caps;
+    letter-spacing: .02em;
+    color: var(--accent);
+  }
+  .dm-thm-meta { font-family: var(--serif); font-weight: 600; }
+  .dm-thm-amt { color: var(--accent); font-weight: 700; font-family: var(--cm); }
+  .dm-thm-text {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 37.5px; line-height: 1.5;
+    margin-top: 12px; text-align: left;
+  }
+
+  /* ----------------------------------------- Acknowledgments (gifts) band */
+  .dm-ack {
+    flex: 0 0 auto;
+    padding: 21px 54px 12px;
+    border-top: 3px solid var(--rule);
+  }
+  .dm-ack-head {
+    font-family: var(--cm);
+    font-weight: 700; font-variant: small-caps; letter-spacing: .04em;
+    font-size: 31.5px; color: var(--ink-soft);
+    margin-bottom: 9px;
+  }
+  .dm-ack-line {
+    font-family: var(--serif);
+    font-size: 36px; line-height: 1.45; color: var(--ink);
+    padding: 4.5px 0;
+  }
+
+  /* -------------------------------------------------------------- footer */
+  .dm-foot {
+    flex: 0 0 auto;
+    display: flex; justify-content: center; align-items: baseline;
+    padding: 18px 54px 27px;
+    border-top: 3px solid var(--rule);
+    font-family: var(--cm);
+  }
+  .dm-foot-pg { font-size: 33px; color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="vendor/react.development.js"></script>
+<script src="vendor/react-dom.development.js"></script>
+<script src="vendor/babel.min.js"></script>
+
+<script type="text/babel" src="danmaku-feed.jsx"></script>
+<script type="text/babel">
+  function App() {
+    const stream = useDanmakuStream();
+    return (
+      <div className="page">
+        <div className="widget">
+          <DanmakuFeed theme="classic" stream={stream} width="100%" height="100%" />
+        </div>
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
