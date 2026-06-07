@@ -28,7 +28,7 @@ from flask import Flask, Response, send_from_directory
 from flask_cors import CORS
 
 
-APP_VERSION = "Out-of-the-loop 0.4.1"
+APP_VERSION = "Out-of-the-loop 0.4.2"
 RELEASE_DATE = "Jun 7, 2026"
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.toml"
@@ -582,7 +582,7 @@ class DanmakuHimePreprintApp:
     def _obtain_credential(self) -> Optional[Credential]:
         """Apply the freshness policy: load < 24h, refresh < 7d, otherwise re-login."""
         if not self.cred_store.exists():
-            log.info("未找到凭据文件，开始扫码登录。")
+            log.debug("未找到凭据文件，开始扫码登录。")
             return self._login_and_store()
 
         try:
@@ -593,20 +593,20 @@ class DanmakuHimePreprintApp:
 
         age = self._credential_age_seconds(obtained_at)
         if age is None or age >= self.config.credential_refresh_max_age_seconds:
-            log.info("凭据已超过 7 天或时间戳缺失，重新扫码登录。")
+            log.debug("凭据已超过 7 天或时间戳缺失，重新扫码登录。")
             return self._login_and_store()
 
         if age < self.config.credential_load_max_age_seconds:
-            log.info("凭据在 %.1f 小时内，直接载入。", age / 3600)
+            log.debug("凭据在 %.1f 小时内，直接载入。", age / 3600)
             return credential
 
-        log.info("凭据已过 %.1f 小时，尝试刷新。", age / 3600)
+        log.debug("凭据已过 %.1f 小时，尝试刷新。", age / 3600)
         try:
             if sync(credential.check_refresh()):
                 sync(credential.refresh())
-                log.info("凭据刷新完成。")
+                log.debug("凭据刷新完成。")
             else:
-                log.info("凭据仍有效，无需刷新，仅更新时间戳。")
+                log.debug("凭据仍有效，无需刷新，仅更新时间戳。")
             self.cred_store.save(credential)
             return credential
         except Exception as exc:
@@ -619,7 +619,7 @@ class DanmakuHimePreprintApp:
             return None
         try:
             self.cred_store.save(credential)
-            log.info("凭据已保存：%s", self.config.credential_file)
+            log.debug("凭据已保存：%s", self.config.credential_file)
         except Exception as exc:
             log.warning("保存凭据失败：%s", exc)
         return credential
@@ -648,12 +648,12 @@ class DanmakuHimePreprintApp:
         log.info("Version: %s", APP_VERSION)
         log.info("前端地址：http://%s:%s/", self.config.host, self.config.port)
         log.info("目标直播间：%s", self.config.room_id)
-        log.info("目标粉丝牌：%s", self.config.guard_name)
+        log.debug("目标粉丝牌：%s", self.config.guard_name)
 
     def _publish_configured_init(self) -> None:
         init_event = self._build_init()
-        log.info("页面标题：%s", init_event.get("room_title", ""))
-        log.info("页面作者：%s", ", ".join(author.get("name", "") for author in init_event.get("authors", [])))
+        log.debug("页面标题：%s", init_event.get("room_title", ""))
+        log.debug("页面作者：%s", ", ".join(author.get("name", "") for author in init_event.get("authors", [])))
         self.hub.set_init(init_event)
 
     def _connect_loop(self, credential: Credential) -> None:
@@ -956,21 +956,34 @@ def setup_logging(config: AppConfig) -> None:
     Our own logger, werkzeug and bilibili_api's loggers all funnel through the
     same console + file handlers on the root logger, so the terminal stays in a
     single format and everything is mirrored to `log_file` for later review.
+
+    The console handler is INFO+; the file handler is DEBUG+, so `log.debug`
+    diagnostics (credential freshness, masthead echo) stay out of the terminal
+    but are still recorded to `log_file` for after-the-fact review. Only our own
+    `log` is raised to DEBUG — third-party loggers keep inheriting INFO from root,
+    so this doesn't unleash library debug chatter into the file.
     """
     logging.addLevelName(logging.WARNING, "WARN")
     logging.addLevelName(logging.CRITICAL, "CRIT")
+    logging.addLevelName(logging.DEBUG, "DBG")
     formatter = logging.Formatter("%(asctime)s %(levelname)-5s %(message)s", datefmt="%H:%M:%S")
 
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(formatter)
+    console.setLevel(logging.INFO)
     file_handler = logging.FileHandler(config.log_file, encoding="utf-8")
     file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
 
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(logging.INFO)
     root.addHandler(console)
     root.addHandler(file_handler)
+
+    # Our own diagnostics go down to DEBUG (file-only); everything else stays at
+    # the root's INFO threshold.
+    log.setLevel(logging.DEBUG)
 
     # werkzeug's per-request access log is noise here; let only its errors through
     # (they still flow to our handlers via propagation).
