@@ -29,7 +29,8 @@ from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
 
 
-APP_VERSION = "Out-of-the-loop 0.4.2"
+APP_VERSION = "0.4.2"
+APP_CODENAME = "Out-of-the-loop"
 RELEASE_DATE = "Jun 7, 2026"
 # Front/back contract version — the SCHEMA.md event-shape version, independent of
 # APP_VERSION and of any frontend's own version. The backend refuses to serve a
@@ -38,6 +39,10 @@ RELEASE_DATE = "Jun 7, 2026"
 # and combine iff their api_version strings match. Bump this whenever the event
 # contract in SCHEMA.md changes in a way the frontend must track.
 API_VERSION = "0.2"
+# Codenames are display-only: they ride along in the manifests and are printed at
+# startup, but DO NOT participate in any version/integrity check (a codename never
+# blocks startup or front/back pairing). Version strings are the only thing matched.
+API_CODENAME = "多少橱窗"
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.toml"
 BACKEND_MANIFEST = BASE_DIR / "backend.json"
@@ -691,7 +696,9 @@ class DanmakuHimePreprintApp:
                 "status": "ok",
                 "room_id": self.config.room_id,
                 "version": APP_VERSION,
+                "codename": APP_CODENAME,
                 "api_version": API_VERSION,
+                "api_codename": API_CODENAME,
             }
 
         return app
@@ -800,11 +807,15 @@ class DanmakuHimePreprintApp:
         self._server_thread.start()
 
     def _log_startup(self) -> None:
-        log.info("Version: %s (API %s)", APP_VERSION, API_VERSION)
+        log.info("后端版本：%s（%s）", APP_VERSION, APP_CODENAME)
+        log.info("API 版本：%s（%s）", API_VERSION, API_CODENAME)
         m = self.frontend_manifest
+        codename = m.get("codename") or ""
         log.info(
-            "前端：%s %s（%s，API %s）",
-            m.get("name"), m.get("version"), self.frontend_dir.name, m.get("api_version"),
+            "前端版本：%s %s%s [%s，API %s]",
+            m.get("name"), m.get("version"),
+            f"（{codename}）" if codename else "",
+            self.frontend_dir.name, m.get("api_version"),
         )
         log.info("前端地址：http://%s:%s/", self.config.host, self.config.port)
         log.info("目标直播间：%s", self.config.room_id)
@@ -1142,7 +1153,7 @@ def check_frontend(config: AppConfig) -> Dict[str, Any]:
             f"前端目录 {frontend_dir} 缺少 index.html（config.toml 的 frontend 指向是否正确？）。"
         )
     manifest = _load_manifest(
-        frontend_dir / "frontend.json", f"python3 {frontend_dir.name}/build_frontend.py"
+        frontend_dir / "frontend.json", f"python3 frontends/build_frontend.py {frontend_dir.name}"
     )
 
     api = manifest.get("api_version")

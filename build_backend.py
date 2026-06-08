@@ -38,11 +38,14 @@ BACKEND_MANIFEST = BASE_DIR / "backend.json"
 # Must match app.py's INTEGRITY_FILES (the backend self-check set).
 INTEGRITY_FILES = ("app.py",)
 
-# Version constants read straight out of app.py's source, in manifest order.
+# Constants read straight out of app.py's source, in manifest order. Codenames
+# ride along for display but are NOT checked by check_version (version strings are).
 VERSION_CONSTANTS = (
     ("app_version", "APP_VERSION"),
+    ("app_codename", "APP_CODENAME"),
     ("release_date", "RELEASE_DATE"),
     ("api_version", "API_VERSION"),
+    ("api_codename", "API_CODENAME"),
 )
 
 # Everything a backend package needs. The frontend ships separately (its own
