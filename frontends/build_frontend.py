@@ -20,14 +20,15 @@ A pattern matching nothing is an error (likely a typo).
 
 index.html's comment block and `.project` are the two hand-authored truth sources;
 this script only mirrors them into the (fully generated, never hand-edited) json.
-The backend (app.py) re-derives the same hashes from `.project`'s patterns recorded
-as the json's keys and refuses to start on any mismatch (or an api_version that
-differs from its own), so a frontend package and a backend package ship separately
-and combine iff their api_version strings match.
+The backend (initialization.py's VersionGuard) re-derives the same hashes from
+`.project`'s patterns recorded as the json's keys and refuses to start on any
+mismatch (or an api_version that differs from its own), so a frontend package and
+a backend package ship separately and combine iff their api_version strings match.
 
-The pattern matching and hashing here MUST stay byte-identical to app.py's
-check_frontend (same pathspec gitwildmatch, same candidate filter, same digest
-construction — sorted relative posix path + NUL + raw bytes + NUL per file).
+The pattern matching and hashing here MUST stay byte-identical to
+VersionGuard.check_frontend in initialization.py (same pathspec gitwildmatch, same
+candidate filter, same digest construction — sorted relative posix path + NUL + raw
+bytes + NUL per file).
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ OPTIONAL_META = frozenset({"codename"})
 # Names that may live in a frontend folder but are never part of the hashed
 # payload: package metadata/tooling and user-editable frontend-local config.
 # Skipped from the candidate set on BOTH sides so a greedy pattern can't pull
-# them in — MUST match app.py exactly.
+# them in — MUST match initialization.py exactly.
 NON_PAYLOAD = frozenset({"frontend.json", "build_frontend.py", ".project", "config.json"})
 
 
@@ -86,7 +87,7 @@ def read_patterns(project_file: Path) -> list[str]:
 
 def candidate_files(frontend_dir: Path) -> list[Path]:
     """Every file under the frontend dir eligible to be matched by a pattern —
-    i.e. minus the non-payload tooling/artifacts. Must match app.py exactly."""
+    i.e. minus the non-payload tooling/artifacts. Must match initialization.py exactly."""
     files = []
     for path in frontend_dir.rglob("*"):
         if not path.is_file() or path.suffix == ".zip":
@@ -108,7 +109,7 @@ def match_pattern(frontend_dir: Path, pattern: str, candidates: list[Path]) -> l
 def group_hash(frontend_dir: Path, files: list[Path]) -> str:
     """One sha256 sealing an ordered group of files: per file, the relative posix
     path then the raw bytes, each NUL-delimited so paths and content can't run
-    together. Must stay byte-identical to app.py's _frontend_group_hash."""
+    together. Must stay byte-identical to initialization.py's _frontend_group_hash."""
     digest = hashlib.sha256()
     for path in files:
         digest.update(path.relative_to(frontend_dir).as_posix().encode("utf-8"))

@@ -9,7 +9,7 @@ The backend connects to one Bilibili live room, converts live events into the SS
 ```bash
 python3 build_backend.py
 python3 frontends/build_frontend.py preprint
-python3 app.py
+python3 main.py
 ```
 
 After startup, scan the Bilibili login QR code in the terminal and open:

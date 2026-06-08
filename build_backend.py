@@ -2,14 +2,15 @@
 """
 DanmakuHime — backend manifest / package generator.
 
-Hashes the backend's one source file (app.py) and writes backend.json next to
-it, carrying that hash plus the app_version / release_date / api_version strings
-read straight out of app.py.
+Hashes the backend's source modules and writes backend.json next to them,
+carrying those hashes plus the app_version / release_date / api_version strings
+read straight out of main.py (where the version constants live).
 
-app.py refuses to start unless its own APP_VERSION / RELEASE_DATE / API_VERSION
-constants and the live sha256 of app.py match this manifest, so the workflow is:
+The backend refuses to start unless main.py's APP_VERSION / RELEASE_DATE /
+API_VERSION constants and the live sha256 of every module match this manifest, so
+the workflow is:
 
-    edit app.py  ->  python3 build_backend.py  ->  python3 app.py
+    edit any backend .py  ->  python3 build_backend.py  ->  python3 main.py
 
 The api_version is the front/back contract version (see SCHEMA.md). A frontend
 manifest (frontends/<name>/frontend.json, built by that frontend's
@@ -18,8 +19,9 @@ a frontend whose api_version does not equal this one — so a backend package an
 a frontend package can ship independently and be combined as long as their
 api_version strings match exactly.
 
-The hashing here MUST stay byte-identical to app.py's check_version()
-(sha256 over raw file bytes, no text decode / newline normalization).
+The hashing here MUST stay byte-identical to VersionGuard.check_version() in
+initialization.py (sha256 over raw file bytes, no text decode / newline
+normalization).
 """
 
 from __future__ import annotations
@@ -32,13 +34,22 @@ from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-APP_FILE = BASE_DIR / "app.py"
+MAIN_FILE = BASE_DIR / "main.py"
 BACKEND_MANIFEST = BASE_DIR / "backend.json"
 
-# Must match app.py's INTEGRITY_FILES (the backend self-check set).
-INTEGRITY_FILES = ("app.py",)
+# Must match initialization.py's INTEGRITY_FILES (the backend self-check set):
+# every backend source module, hashed and bound to backend.json.
+INTEGRITY_FILES = (
+    "util.py",
+    "initialization.py",
+    "server.py",
+    "credentials.py",
+    "stats.py",
+    "bilibili.py",
+    "main.py",
+)
 
-# Constants read straight out of app.py's source, in manifest order. Codenames
+# Constants read straight out of main.py's source, in manifest order. Codenames
 # ride along for display but are NOT checked by check_version (version strings are).
 VERSION_CONSTANTS = (
     ("app_version", "APP_VERSION"),
@@ -54,7 +65,13 @@ VERSION_CONSTANTS = (
 # An explicit allowlist keeps runtime/secret files (credential.json, the
 # log/stats/event sinks, __pycache__) out of the bundle.
 PACKAGE_FILES = (
-    "app.py",
+    "util.py",
+    "initialization.py",
+    "server.py",
+    "credentials.py",
+    "stats.py",
+    "bilibili.py",
+    "main.py",
     "build_backend.py",
     "backend.json",
     "config.toml",
@@ -69,15 +86,15 @@ def file_sha256(path: Path) -> str:
 
 
 def read_constant(source: str, name: str) -> str:
-    """Pull a top-level `NAME = "..."` string literal out of app.py's source.
+    """Pull a top-level `NAME = "..."` string literal out of main.py's source.
 
-    Reading the constants from the file (rather than importing app.py, which
+    Reading the constants from the file (rather than importing main.py, which
     would pull in bilibili_api/flask and trigger the version check itself) keeps
     build_backend.py dependency-free and runnable before the manifest exists.
     """
     match = re.search(rf'^{name}\s*=\s*"([^"]*)"', source, re.MULTILINE)
     if match is None:
-        raise SystemExit(f"在 app.py 中找不到 {name} 常量。")
+        raise SystemExit(f"在 main.py 中找不到 {name} 常量。")
     return match.group(1)
 
 
@@ -106,7 +123,7 @@ def build_zip() -> tuple[Path, int]:
 
 
 def main() -> None:
-    source = APP_FILE.read_text(encoding="utf-8")
+    source = MAIN_FILE.read_text(encoding="utf-8")
     meta = {key: read_constant(source, const) for key, const in VERSION_CONSTANTS}
 
     hashes = {name: file_sha256(BASE_DIR / name) for name in INTEGRITY_FILES}
@@ -122,7 +139,7 @@ def main() -> None:
     for key, _ in VERSION_CONSTANTS:
         print(f"  {key:<13} {meta[key]}")
     for name, digest in hashes.items():
-        print(f"  {name:<13} {digest}")
+        print(f"  {name:<20} {digest}")
 
     zip_path, count = build_zip()
     print(f"已打包 {zip_path.name}（{count} 个文件）")
