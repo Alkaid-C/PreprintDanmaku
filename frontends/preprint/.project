@@ -1,0 +1,9 @@
+# 本前端发布时包含哪些文件（gitignore 风格 pattern，由 pathspec 解析）。
+# 每行一个 pattern = 一组、对应 frontend.json 里的一个 hash：
+#   单独写一个文件 → 该文件独享一个 hash，校验失败时能精确报到它；
+#   用 glob（如 fonts/**）→ 整组合成一个 hash，失败时只报到这一行。
+# 改完本文件后重新运行 python3 build_frontend.py。
+index.html
+*.jsx
+vendor/**
+fonts/**

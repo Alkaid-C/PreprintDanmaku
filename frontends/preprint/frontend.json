@@ -1,0 +1,12 @@
+{
+  "name": "Preprint",
+  "version": "0.1.2",
+  "release_date": "Jun 7, 2026",
+  "api_version": "0.2",
+  "payload": {
+    "index.html": "c6529f84ba11a7905b3154471ce00243525f424db99035c86e7c49f08aa4734e",
+    "*.jsx": "ac4bff3d67af6ddd556324355c4630ed1b6aa11892103b015ee7f469be4a922a",
+    "vendor/**": "25aaa74c61fa820a08a003bd3154a3ca3b0f7259bb1e2ad343da601e87da39e5",
+    "fonts/**": "8a5eb92f199d744b9e9a0bfe8f1ddb26dfe5f24cc56df44c562f7a01cf2f2ab6"
+  }
+}

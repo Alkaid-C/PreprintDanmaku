@@ -1,9 +1,0 @@
-{
-  "app_version": "Out-of-the-loop 0.4.2",
-  "release_date": "Jun 7, 2026",
-  "hashes": {
-    "app.py": "dcc99ff87f2f39248f41eaea4fdabf3e11f4e09b3f3b5a28fef60bd3ccd4dd69",
-    "danmaku-feed.jsx": "b0ad62004fc65a36f7db23f0e24bcde4ce8fc4079a04174a827cc02c81f9b0ed",
-    "preprint.html": "235e229400e1f7d669ecc847cf468e2d116cc1728f3a1e0995cfe28af58a75ae"
-  }
-}

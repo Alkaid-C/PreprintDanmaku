@@ -22,21 +22,31 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Optional, Tuple
 
+import pathspec
 from bilibili_api import Credential, live, sync
 from bilibili_api.login_v2 import QrCodeLogin, QrCodeLoginEvents
-from flask import Flask, Response, send_from_directory
+from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
 
 
 APP_VERSION = "Out-of-the-loop 0.4.2"
 RELEASE_DATE = "Jun 7, 2026"
+# Front/back contract version — the SCHEMA.md event-shape version, independent of
+# APP_VERSION and of any frontend's own version. The backend refuses to serve a
+# frontend whose manifest api_version does not equal this exactly (see
+# check_frontend), so a backend package and a frontend package ship separately
+# and combine iff their api_version strings match. Bump this whenever the event
+# contract in SCHEMA.md changes in a way the frontend must track.
+API_VERSION = "0.2"
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.toml"
-VERSION_FILE = BASE_DIR / "version.json"
+BACKEND_MANIFEST = BASE_DIR / "backend.json"
 
-# The three source files whose integrity is bound to version.json (see build.py).
-# Keyed by the names build.py records; resolved against BASE_DIR at check time.
-INTEGRITY_FILES = ("app.py", "danmaku-feed.jsx", "preprint.html")
+# The backend source file(s) whose integrity is bound to backend.json (see
+# build_backend.py). Keyed by the names it records; resolved against BASE_DIR.
+# Frontend files are not here — they live under frontends/<name>/ and are bound
+# to that frontend's own frontend.json instead (see check_frontend).
+INTEGRITY_FILES = ("app.py",)
 
 # Single application logger. All of our own output goes through this; format and
 # handlers (console + file) are configured once in setup_logging(). Third-party
@@ -65,6 +75,9 @@ class AppConfig:
     # Web server
     host: str
     port: int
+    # Frontend package directory (holds index.html + frontend.json); resolved
+    # relative to BASE_DIR. The backend serves and integrity-checks this folder.
+    frontend: Path
 
     # Masthead sent by the backend init event
     stamp_label: str
@@ -610,8 +623,10 @@ class BilibiliEventAdapter:
 
 
 class DanmakuHimePreprintApp:
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, frontend_manifest: Dict[str, Any]):
         self.config = config
+        self.frontend_dir = config.frontend
+        self.frontend_manifest = frontend_manifest
         self.hub = EventHub(config.history_size, config.subscriber_queue_size)
         self.stats = StatsTracker()
         self.adapter = BilibiliEventAdapter(config, self.hub, self.stats)
@@ -620,16 +635,24 @@ class DanmakuHimePreprintApp:
         self._server_thread: Optional[threading.Thread] = None
 
     def create_flask_app(self) -> Flask:
-        app = Flask(__name__, static_folder=str(BASE_DIR), static_url_path="")
+        # Everything under the selected frontend folder is served at the web root,
+        # so index.html's relative refs (vendor/, fonts/, danmaku-feed.jsx) resolve
+        # unchanged. The folder was integrity-checked at startup (check_frontend).
+        app = Flask(__name__, static_folder=str(self.frontend_dir), static_url_path="")
         CORS(app)
 
         @app.route("/")
         def index():
-            return send_from_directory(BASE_DIR, "preprint.html")
+            return send_from_directory(self.frontend_dir, "index.html")
 
-        @app.route("/danmaku-feed.jsx")
-        def feed_jsx():
-            return send_from_directory(BASE_DIR, "danmaku-feed.jsx", mimetype="text/babel")
+        @app.after_request
+        def _babel_mimetype(response):
+            # JSX is transpiled in the browser, so any .jsx served from the
+            # frontend folder must come back as text/babel (by extension — the
+            # filenames are no longer hardcoded).
+            if request.path.endswith(".jsx"):
+                response.headers["Content-Type"] = "text/babel; charset=utf-8"
+            return response
 
         @app.route("/stream")
         def stream():
@@ -664,7 +687,12 @@ class DanmakuHimePreprintApp:
 
         @app.route("/health")
         def health():
-            return {"status": "ok", "room_id": self.config.room_id, "version": APP_VERSION}
+            return {
+                "status": "ok",
+                "room_id": self.config.room_id,
+                "version": APP_VERSION,
+                "api_version": API_VERSION,
+            }
 
         return app
 
@@ -772,7 +800,12 @@ class DanmakuHimePreprintApp:
         self._server_thread.start()
 
     def _log_startup(self) -> None:
-        log.info("Version: %s", APP_VERSION)
+        log.info("Version: %s (API %s)", APP_VERSION, API_VERSION)
+        m = self.frontend_manifest
+        log.info(
+            "前端：%s %s（%s，API %s）",
+            m.get("name"), m.get("version"), self.frontend_dir.name, m.get("api_version"),
+        )
         log.info("前端地址：http://%s:%s/", self.config.host, self.config.port)
         log.info("目标直播间：%s", self.config.room_id)
         log.debug("目标粉丝牌：%s", self.config.guard_name)
@@ -968,9 +1001,11 @@ class ConfigError(Exception):
 
 
 class VersionMismatchError(Exception):
-    """version.json is missing/unreadable, or the version strings or one of the
-    file hashes disagree with what build.py last recorded — i.e. a source file
-    changed (or APP_VERSION/RELEASE_DATE bumped) without re-running build.py."""
+    """A manifest (backend.json or a frontend's frontend.json) is missing or
+    unreadable, a version/api string disagrees, or a file hash does not match —
+    i.e. a source file changed (or a version constant was bumped) without
+    re-running the matching build script, or a mismatched front/back pair was
+    combined."""
 
 
 # Shown to the operator for any file-hash failure (missing/unrecorded/unreadable
@@ -979,52 +1014,39 @@ INTEGRITY_FAIL_MESSAGE = "文件完整性校验失败，请联系开发者。"
 
 
 def _file_sha256(path: Path) -> str:
-    """sha256 of a file's raw bytes, hex-encoded. Must stay byte-identical to
-    build.py's hashing (raw bytes, no text decode / newline normalization)."""
+    """sha256 of a file's raw bytes, hex-encoded. Must stay byte-identical to the
+    build scripts' hashing (raw bytes, no text decode / newline normalization)."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def check_version() -> None:
-    """Fail fast unless APP_VERSION, RELEASE_DATE, and the sha256 of every file
-    in INTEGRITY_FILES all match what build.py recorded in version.json.
-
-    This is a staleness / consistency guard, not a tamper-proofing mechanism:
-    it catches editing a source file (or bumping a version constant) without
-    re-running build.py. Run `python3 build.py` after any such change.
-    """
+def _load_manifest(path: Path, rebuild_hint: str) -> Dict[str, Any]:
+    """Read and JSON-parse a manifest, mapping every failure to a clear
+    VersionMismatchError. `rebuild_hint` is the build command to re-run."""
     try:
-        manifest = json.loads(VERSION_FILE.read_text(encoding="utf-8"))
+        manifest = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise VersionMismatchError(
-            f"找不到 {VERSION_FILE.name}，请先运行 `python3 build.py` 生成版本清单。"
-        )
+        raise VersionMismatchError(f"找不到 {path.name}，请先运行 `{rebuild_hint}` 生成清单。")
     except (OSError, json.JSONDecodeError) as exc:
-        raise VersionMismatchError(f"无法读取 {VERSION_FILE.name}：{exc}")
+        raise VersionMismatchError(f"无法读取 {path.name}：{exc}")
+    if not isinstance(manifest, dict):
+        raise VersionMismatchError(f"{path.name} 格式不对（应为 JSON 对象）。")
+    return manifest
 
-    if manifest.get("app_version") != APP_VERSION:
-        raise VersionMismatchError(
-            f"app_version 不匹配：app.py 为 {APP_VERSION!r}，"
-            f"version.json 为 {manifest.get('app_version')!r}。请运行 `python3 build.py`。"
-        )
-    if manifest.get("release_date") != RELEASE_DATE:
-        raise VersionMismatchError(
-            f"release_date 不匹配：app.py 为 {RELEASE_DATE!r}，"
-            f"version.json 为 {manifest.get('release_date')!r}。请运行 `python3 build.py`。"
-        )
 
-    hashes = manifest.get("hashes")
+def _verify_hashes(hashes: Any, base_dir: Path, names, manifest_name: str) -> None:
+    """Check every file in `names` against its recorded sha256 in `hashes`,
+    resolving paths against base_dir. Raises VersionMismatchError on any miss."""
     if not isinstance(hashes, dict):
         raise VersionMismatchError(
-            f"{INTEGRITY_FAIL_MESSAGE}（{VERSION_FILE.name} 缺少 hashes 字段）"
+            f"{INTEGRITY_FAIL_MESSAGE}（{manifest_name} 缺少 hashes 字段）"
         )
-
-    for name in INTEGRITY_FILES:
+    for name in names:
         expected = hashes.get(name)
         if expected is None:
             raise VersionMismatchError(
-                f"{INTEGRITY_FAIL_MESSAGE}（{VERSION_FILE.name} 未记录 {name} 的哈希）"
+                f"{INTEGRITY_FAIL_MESSAGE}（{manifest_name} 未记录 {name} 的哈希）"
             )
-        path = BASE_DIR / name
+        path = base_dir / name
         try:
             actual = _file_sha256(path)
         except FileNotFoundError:
@@ -1037,8 +1059,112 @@ def check_version() -> None:
             )
         if actual != expected:
             raise VersionMismatchError(
-                f"{INTEGRITY_FAIL_MESSAGE}（{name} 哈希不匹配，文件内容与版本清单不一致）"
+                f"{INTEGRITY_FAIL_MESSAGE}（{name} 哈希不匹配，文件内容与清单不一致）"
             )
+
+
+def check_version() -> None:
+    """Fail fast unless the backend's APP_VERSION / RELEASE_DATE / API_VERSION and
+    the sha256 of every INTEGRITY_FILES entry match what build_backend.py recorded
+    in backend.json.
+
+    A staleness / consistency guard, not tamper-proofing: it catches editing app.py
+    (or bumping a constant) without re-running `python3 build_backend.py`.
+    """
+    manifest = _load_manifest(BACKEND_MANIFEST, "python3 build_backend.py")
+    for label, expected in (
+        ("app_version", APP_VERSION),
+        ("release_date", RELEASE_DATE),
+        ("api_version", API_VERSION),
+    ):
+        if manifest.get(label) != expected:
+            raise VersionMismatchError(
+                f"{label} 不匹配：app.py 为 {expected!r}，"
+                f"{BACKEND_MANIFEST.name} 为 {manifest.get(label)!r}。请运行 `python3 build_backend.py`。"
+            )
+    _verify_hashes(manifest.get("hashes"), BASE_DIR, INTEGRITY_FILES, BACKEND_MANIFEST.name)
+
+
+# Files that live in a frontend folder but are never part of the served/hashed
+# payload: the build tooling, its `.project` allowlist, and the manifest itself.
+# Skipped from the candidate set so a greedy pattern can't pull them in — MUST
+# match build_frontend.py's NON_PAYLOAD exactly.
+_FRONTEND_NON_PAYLOAD = frozenset({"frontend.json", "build_frontend.py", ".project"})
+
+
+def _frontend_candidates(frontend_dir: Path) -> List[Path]:
+    """Files under the frontend dir eligible to be matched by a `.project` pattern
+    (minus the non-payload tooling/artifacts). Mirrors build_frontend.py."""
+    files = []
+    for path in frontend_dir.rglob("*"):
+        if not path.is_file() or path.suffix == ".zip":
+            continue
+        rel = path.relative_to(frontend_dir)
+        if "__pycache__" in rel.parts or rel.as_posix() in _FRONTEND_NON_PAYLOAD:
+            continue
+        files.append(path)
+    return files
+
+
+def _frontend_group_hash(frontend_dir: Path, pattern: str, candidates: List[Path]) -> str:
+    """One sha256 over the candidates matched by `pattern`, sorted by relative posix
+    path, each contribution = path + NUL + raw bytes + NUL. Byte-identical to
+    build_frontend.py's match_pattern + group_hash."""
+    spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
+    matched = sorted(
+        (p for p in candidates if spec.match_file(p.relative_to(frontend_dir).as_posix())),
+        key=lambda p: p.relative_to(frontend_dir).as_posix(),
+    )
+    digest = hashlib.sha256()
+    for path in matched:
+        digest.update(path.relative_to(frontend_dir).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def check_frontend(config: AppConfig) -> Dict[str, Any]:
+    """Fail fast unless the selected frontend folder carries a frontend.json whose
+    api_version equals the backend's API_VERSION and whose every `payload` group
+    (one hash per `.project` pattern) re-derives to the same digest on disk.
+    Returns the manifest (for startup logging).
+
+    This is what makes the front/back split work: any frontend package with a
+    matching api_version drops in, but a stale or mismatched one is rejected
+    before anything is served. The mismatch message names the offending pattern,
+    so per-file granularity is the author's choice of how finely `.project` slices.
+    """
+    frontend_dir = config.frontend
+    label = f"{frontend_dir.name}/frontend.json"
+    if not (frontend_dir / "index.html").is_file():
+        raise VersionMismatchError(
+            f"前端目录 {frontend_dir} 缺少 index.html（config.toml 的 frontend 指向是否正确？）。"
+        )
+    manifest = _load_manifest(
+        frontend_dir / "frontend.json", f"python3 {frontend_dir.name}/build_frontend.py"
+    )
+
+    api = manifest.get("api_version")
+    if api != API_VERSION:
+        raise VersionMismatchError(
+            f"前后端 API 版本不一致：后端 app.py 为 {API_VERSION!r}，"
+            f"前端 {frontend_dir.name} 需要 {api!r}。请改用 API 版本相符的前端或后端包。"
+        )
+
+    payload = manifest.get("payload")
+    if not isinstance(payload, dict) or not payload:
+        raise VersionMismatchError(
+            f"{INTEGRITY_FAIL_MESSAGE}（{label} 缺少 payload 字段）"
+        )
+
+    candidates = _frontend_candidates(frontend_dir)
+    for pattern, expected in payload.items():
+        if _frontend_group_hash(frontend_dir, pattern, candidates) != expected:
+            raise VersionMismatchError(
+                f"{INTEGRITY_FAIL_MESSAGE}（前端 {pattern!r} 这组文件与清单不一致）"
+            )
+    return manifest
 
 
 # Scalar config.toml keys that map 1:1 onto an AppConfig field of the same name.
@@ -1054,8 +1180,12 @@ _TOML_SCALAR_FIELDS = (
     "gift_price_to_yuan_divisor", "cents_per_yuan", "superchat_observation_threshold_yuan",
     "superchat_dwell_multiplier",
 )
-# File-name keys: stored as bare names in the TOML, resolved relative to BASE_DIR.
-_TOML_PATH_FIELDS = ("event_log_file", "stats_output_file", "qr_image_file", "credential_file", "log_file")
+# Path keys: stored as bare names / relative paths in the TOML, resolved relative
+# to BASE_DIR. `frontend` is a directory (frontends/<name>); the rest are files.
+_TOML_PATH_FIELDS = (
+    "frontend",
+    "event_log_file", "stats_output_file", "qr_image_file", "credential_file", "log_file",
+)
 
 
 def load_config(path: Path = CONFIG_FILE) -> AppConfig:
@@ -1161,7 +1291,13 @@ def main() -> None:
         config = load_config()
     except ConfigError as exc:
         raise SystemExit(f"启动失败：{exc}")
-    app = DanmakuHimePreprintApp(config)
+    try:
+        # Needs config to know which frontend folder to verify, so it runs after
+        # load_config (unlike the backend self-check, which needs nothing).
+        frontend_manifest = check_frontend(config)
+    except VersionMismatchError as exc:
+        raise SystemExit(str(exc))
+    app = DanmakuHimePreprintApp(config, frontend_manifest)
     app.run()
 
 

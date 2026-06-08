@@ -30,6 +30,9 @@ guard_name = "埃抖露"
 host = "127.0.0.1"
 # 网页端口，浏览器打开 http://127.0.0.1:端口/
 port = 19216
+# 使用哪一套前端（指向 frontends 下的目录，里面要有 index.html 和 frontend.json）
+# 换前端只改这一行；前端与后端的 API 版本必须一致，否则启动会被拒绝
+frontend = "frontends/preprint"
 
 
 # ———————————————— 论文刊头（页面顶部的“论文”信息）————————————————
