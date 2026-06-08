@@ -128,12 +128,11 @@ function useDanmakuStream() {
     if (ev.type === 'guard') {
       const rank = Math.max(1, Math.min(3, Number(ev.level) || 1));
       const months = Math.max(1, Math.round(Number(ev.months) || 1));
-      const verb = ev.newguard ? '开通了' : '续费了';
       return {
         id, type: 'guard', user: sender.user, time,
         num: ++state.env,
         rank,
-        text: verb + months + '个月的' + GUARD_NAME[rank],
+        text: '开通了' + months + '个月的' + GUARD_NAME[rank],
         dwell: Math.max(1000, (Number(ev.dwell_seconds) || 12) * 1000),
       };
     }

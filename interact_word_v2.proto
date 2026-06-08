@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+message Base {
+  string name = 1;
+  string face = 2;          // 头像 URL
+}
+
+// uinfo.medal 的布局：name 在 #1
+message UinfoMedal {
+  string name       = 1;
+  uint32 level      = 2;
+  uint64 medal_id   = 7;
+  uint32 is_lighted = 9;
+  uint64 anchor_uid = 10;
+  uint64 score      = 12;
+}
+
+message Wealth { uint32 level = 1; }   // 荣耀等级
+
+message UserInfo {
+  uint64     uid    = 1;
+  Base       base   = 2;
+  UinfoMedal medal  = 3;
+  Wealth     wealth = 4;
+}
+
+// 顶层 #9 的粉丝牌：布局不同，name 在 #3
+message FansMedal {
+  uint64 anchor_uid = 1;
+  uint32 level      = 2;
+  string name       = 3;
+  uint32 is_lighted = 8;
+  uint64 roomid     = 12;
+  uint64 score      = 13;
+}
+
+message InteractWordV2 {
+  uint64    uid          = 1;
+  string    uname        = 2;
+  repeated uint32 identities = 4;   // packed
+  uint32    msg_type     = 5;       // 1=进场, 2=关注 (见文档注)
+  uint64    roomid       = 6;
+  uint64    timestamp    = 7;       // 秒
+  uint64    timestamp_ms = 8;       // 毫秒
+  FansMedal fans_medal   = 9;
+  uint64    trigger_time = 15;      // 纳秒
+  UserInfo  uinfo        = 22;
+}

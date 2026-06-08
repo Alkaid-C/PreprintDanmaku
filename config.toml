@@ -101,6 +101,8 @@ gift_price_to_yuan_divisor = 1000
 cents_per_yuan = 100
 # SuperChat 金额低于此值显示为 Remark，达到/超过显示为 Observation（元）
 superchat_observation_threshold_yuan = 30
+# SuperChat 置顶停留时长 = B 站官方按金额给的停留秒数 × 这个倍率（1.0 = 原样）
+superchat_dwell_multiplier = 1.0
 
 
 # 大航海置顶停留时长（秒），按等级：1=舰长 2=提督 3=总督
@@ -125,34 +127,3 @@ corresponding = false
 name = "埃斯卡尔Askr"
 affiliation = "环角事务所"
 corresponding = true
-
-
-# ———————————————— SuperChat 置顶停留档位 ————————————————
-# 按金额分档决定 SC 在画面顶部停留多久。
-#   below        = 金额低于这个数（元）时适用本档
-#   dwell_seconds= 停留秒数
-# 从上到下匹配第一个满足的档；最后一档不写 below，表示「以上全部」。
-
-[[superchat_dwell_tiers]]
-below = 50
-dwell_seconds = 60
-
-[[superchat_dwell_tiers]]
-below = 100
-dwell_seconds = 120
-
-[[superchat_dwell_tiers]]
-below = 500
-dwell_seconds = 300
-
-[[superchat_dwell_tiers]]
-below = 1000
-dwell_seconds = 1800
-
-[[superchat_dwell_tiers]]
-below = 2000
-dwell_seconds = 3600
-
-# 2000 元及以上
-[[superchat_dwell_tiers]]
-dwell_seconds = 7200

@@ -98,9 +98,8 @@ class AppConfig:
     cents_per_yuan: int
     # SuperChat below this amount is Remark; this amount and above is Observation.
     superchat_observation_threshold_yuan: int
-    # Each tier is (below_yuan, dwell_seconds); the final tier's below is None
-    # ("this amount and above"). Matched top-down against the SC amount.
-    superchat_dwell_tiers: List[Tuple[Optional[int], int]]
+    # SuperChat dwell = Bilibili's authoritative `time` (seconds) × this multiplier.
+    superchat_dwell_multiplier: float
     guard_dwell_seconds_by_schema_level: Dict[int, int]
 
     # Output files (resolved relative to this module)
@@ -319,6 +318,25 @@ class StatsTracker:
         return report
 
 
+class _Anomalies:
+    """Collects the parse fallbacks hit while converting a single event, so
+    handle_event can emit one honest warning (with the raw event attached) when a
+    required field was missing/unparseable and we substituted a placeholder.
+    Legitimate "absence has meaning" states (no fan medal, no guard, not a reply)
+    are NOT recorded here — only genuine substitutions are."""
+
+    __slots__ = ("notes",)
+
+    def __init__(self) -> None:
+        self.notes: List[str] = []
+
+    def note(self, message: str) -> None:
+        self.notes.append(message)
+
+    def __bool__(self) -> bool:
+        return bool(self.notes)
+
+
 class BilibiliEventAdapter:
     def __init__(self, config: AppConfig, hub: EventHub, stats: StatsTracker):
         self.config = config
@@ -335,13 +353,20 @@ class BilibiliEventAdapter:
             self.hub.publish(_system_message(report, self.config.stream_end_report_dwell_seconds))
             return
 
+        anomalies = _Anomalies()
         try:
-            converted = self._convert(event_type, event)
+            converted = self._convert(event_type, event, anomalies)
         except Exception as exc:
             log.error("处理 %s 失败：%s", event_type, exc, exc_info=True)
             if self.config.debug_forward_errors:
                 self._publish_debug_error(event_type, exc)
             return
+
+        # Honest accounting: when a field was missing/unparseable and we substituted
+        # a placeholder, say so once with the full raw event attached.
+        if anomalies:
+            log.warning("解析 %s 命中兜底：%s；原始数据：%r",
+                        event_type or "UNKNOWN", "；".join(anomalies.notes), event)
 
         if converted:
             self.hub.publish(converted)
@@ -360,37 +385,84 @@ class BilibiliEventAdapter:
                 file.write(repr(event))
                 file.write("\n")
 
-    def _convert(self, event_type: str, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _convert(self, event_type: str, event: Dict[str, Any], anomalies: "_Anomalies") -> Optional[Dict[str, Any]]:
         if event_type == "DANMU_MSG":
-            return self._danmaku(event)
+            return self._danmaku(event, anomalies)
         if event_type == "SEND_GIFT":
-            return self._gift(event)
+            return self._gift(event, anomalies)
         if event_type == "SUPER_CHAT_MESSAGE":
-            return self._superchat(event)
+            return self._superchat(event, anomalies)
         if event_type == "GUARD_BUY":
-            return self._guard(event)
+            return self._guard(event, anomalies)
         return None
 
-    def _danmaku(self, event: Dict[str, Any]) -> Dict[str, Any]:
+    def _danmaku(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
         info = event["data"]["info"]
-        extra = self._danmaku_extra(info)
-        reply_uname = extra.get("reply_uname") or ""
+        sender = _build_sender(self._danmaku_uinfo(info, anomalies), anomalies)
         text = str(info[1])
+
+        # Emoticon danmaku: info[0][13] is a dict carrying the image url and info[1]
+        # is its caption (RAW_DATA §4.1); plain danmaku has info[0][13] == '{}'.
+        emoticon = info[0][13]
+        if isinstance(emoticon, dict):
+            url = emoticon.get("url")
+            if not url:
+                anomalies.note("image_url 缺失→''")
+            return {
+                "type": "danmaku",
+                "timestamp": _hhmm(),
+                "sender": sender,
+                "text": text,
+                "is_image": True,
+                "image_url": str(url or ""),
+            }
+
+        reply_uname = self._danmaku_extra(info).get("reply_uname") or ""
         if reply_uname:
             text = f"@{reply_uname}: {text}"
-
-        medal = _danmaku_medal(info)
-        sender = _sender(
-            uid=str(info[2][0]),
-            username=str(info[2][1]),
-            medal=medal,
-        )
         return {
             "type": "danmaku",
             "timestamp": _hhmm(),
             "sender": sender,
             "text": text,
+            "is_image": False,
         }
+
+    @staticmethod
+    def _danmaku_uinfo(info: List[Any], anomalies: "_Anomalies") -> Dict[str, Any]:
+        """The unified UserInfo for a danmaku, at info[0][15].user (RAW_DATA §2.1).
+
+        Falls back to the legacy positional layout (info[2]=user, info[3]=medal)
+        for pre-new-format / dirty payloads, shaped to look like a UserInfo so it
+        flows through _build_sender. Those indices are unstable — best effort, and
+        reaching them at all is itself an anomaly (the new format was universal in
+        the sample), so it is noted.
+        """
+        try:
+            user = info[0][15]["user"]
+            if isinstance(user, dict):
+                return user
+        except (KeyError, IndexError, TypeError):
+            pass
+
+        anomalies.note("UserInfo 缺失（info[0][15].user），回退到旧版位置数组")
+        user: Dict[str, Any] = {}
+        try:
+            user["uid"] = info[2][0]
+            user["base"] = {"name": info[2][1]}
+        except (IndexError, TypeError):
+            pass
+        try:
+            medal_arr = info[3]
+            if isinstance(medal_arr, list) and len(medal_arr) >= 2:
+                user["medal"] = {
+                    "level": medal_arr[0],
+                    "name": medal_arr[1],
+                    "guard_level": medal_arr[10] if len(medal_arr) > 10 else 0,
+                }
+        except (IndexError, TypeError):
+            pass
+        return user
 
     @staticmethod
     def _danmaku_extra(info: List[Any]) -> Dict[str, Any]:
@@ -400,23 +472,25 @@ class BilibiliEventAdapter:
         except (KeyError, IndexError, TypeError, json.JSONDecodeError):
             return {}
 
-    def _gift(self, event: Dict[str, Any]) -> Dict[str, Any]:
+    def _gift(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
         data = _as_dict(_as_dict(event.get("data")).get("data"))
         if not data:
             raise ValueError("SEND_GIFT missing data.data")
-        uid = str(data.get("uid") or "")
-        username = str(data.get("uname") or "匿名用户")
-        count = max(1, _to_int(data.get("num"), 1))
-        gift_name = str(data.get("giftName") or data.get("gift_name") or "礼物")
-        raw_price = data.get("price")
-        parsed_price = _parse_float(raw_price)
-        if parsed_price is None:
-            log.warning("SEND_GIFT 价格缺失/无法解析，按 0 计：price=%r, gift=%r, uid=%r", raw_price, gift_name, uid)
-        price = parsed_price or 0.0
-        total_yuan = price * count / self.config.gift_price_to_yuan_divisor
-        sender_uinfo = _as_dict(data.get("sender_uinfo"))
-        sender = _sender(uid=uid, username=username, medal=sender_uinfo.get("medal"))
-        self.stats.add(uid, username, "gift", total_yuan)
+        sender = _build_sender(
+            data.get("sender_uinfo"), anomalies,
+            flat_uid=data.get("uid"), flat_username=data.get("uname"),
+        )
+        count = _parse_int(data.get("num"))
+        if count is None or count < 1:
+            anomalies.note(f"giftcount 缺失/无效（{data.get('num')!r}）→1")
+            count = 1
+        gift_name = data.get("giftName") or data.get("gift_name")
+        if not gift_name:
+            anomalies.note("giftname 缺失→'礼物'")
+            gift_name = "礼物"
+        gift_name = str(gift_name)
+        total_yuan = self._gift_value_yuan(data, gift_name, anomalies)
+        self.stats.add(sender["uid"], sender["username"], "gift", total_yuan)
         return {
             "type": "gift",
             "timestamp": _hhmm(),
@@ -426,44 +500,80 @@ class BilibiliEventAdapter:
             "gifttotalvalue": int(round(total_yuan * self.config.cents_per_yuan)),
         }
 
-    def _superchat(self, event: Dict[str, Any]) -> Dict[str, Any]:
+    def _gift_value_yuan(self, data: Dict[str, Any], gift_name: str, anomalies: "_Anomalies") -> float:
+        """Yuan a gift counts for (RAW_DATA §5.2/§5.3).
+
+        Free gifts (`coin_type == 'silver'`) count 0; everything else counts
+        `total_coin` (milli-yuan). For blind boxes total_coin is already the opened
+        face value (not what was paid), and for normal gold gifts it equals
+        price × num — so a single branch covers both.
+        """
+        if str(data.get("coin_type") or "").lower() == "silver":
+            return 0.0
+        total_coin = _parse_float(data.get("total_coin"))
+        if total_coin is None:
+            anomalies.note(f"total_coin 缺失/无法解析（{data.get('total_coin')!r}）→0 元，gift={gift_name!r}")
+            return 0.0
+        return total_coin / self.config.gift_price_to_yuan_divisor
+
+    def _superchat(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
         data = event["data"]["data"]
-        user_info = data.get("user_info") or {}
-        uid = str(data.get("uid") or user_info.get("uid") or "")
-        username = str(user_info.get("uname") or data.get("uname") or "匿名用户")
-        price_yuan = int(data.get("price") or 0)
-        medal = data.get("medal_info") or data.get("medal") or {}
-        sender = _sender(uid=uid, username=username, medal=medal)
-        self.stats.add(uid, username, "superchat", price_yuan)
+        sender = _build_sender(
+            data.get("uinfo"), anomalies,
+            flat_uid=data.get("uid"), flat_username=_as_dict(data.get("user_info")).get("uname"),
+        )
+        price_yuan = _parse_int(data.get("price"))  # SC price is in yuan (RAW_DATA §5.1)
+        if price_yuan is None:
+            anomalies.note(f"price 缺失/无法解析（{data.get('price')!r}）→0 元")
+            price_yuan = 0
+        self.stats.add(sender["uid"], sender["username"], "superchat", price_yuan)
+        message = data.get("message")
+        if not message:
+            anomalies.note("text 缺失→''")
         return {
             "type": "superchat",
             "timestamp": _hhmm(),
             "sender": sender,
             "level": 2 if price_yuan >= self.config.superchat_observation_threshold_yuan else 1,
-            "dwell_seconds": self._superchat_dwell_seconds(price_yuan),
+            "dwell_seconds": self._superchat_dwell_seconds(data.get("time"), anomalies),
             "value": price_yuan * self.config.cents_per_yuan,
-            "text": str(data.get("message") or ""),
+            "text": str(message or ""),
         }
 
-    def _superchat_dwell_seconds(self, price_yuan: int) -> int:
-        for upper_bound, dwell_seconds in self.config.superchat_dwell_tiers:
-            if upper_bound is None or price_yuan < upper_bound:
-                return dwell_seconds
-        return 60  # 仅当配置末档不是 (None, ...) 时的保底 dwell
+    def _superchat_dwell_seconds(self, raw_time: Any, anomalies: "_Anomalies") -> int:
+        """Bilibili's authoritative dwell `time` (seconds) × the configured
+        multiplier (RAW_DATA §4.3), at least 1 second."""
+        seconds = _parse_int(raw_time)
+        if seconds is None:
+            anomalies.note(f"superchat time 缺失/无法解析（{raw_time!r})→0")
+            seconds = 0
+        return max(1, int(round(seconds * self.config.superchat_dwell_multiplier)))
 
-    def _guard(self, event: Dict[str, Any]) -> Dict[str, Any]:
+    def _guard(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
         data = event["data"]["data"]
         uid = str(data.get("uid") or "")
-        username = str(data.get("username") or data.get("uname") or "匿名用户")
-        # GUARD_BUY 必定是真买了大航海，落到 0（其他）说明 payload 缺 guard_level，
-        # 兜底按舰长处理（schema: 1=舰长, 2=提督, 3=总督）。
-        schema_level = _guard_level_to_schema(data.get("guard_level")) or 1
-        months = int(data.get("num") or 1)
+        if not uid:
+            anomalies.note("uid 缺失→''")
+        username = data.get("username") or data.get("uname")
+        if not username:
+            username = uid or "匿名用户"
+            anomalies.note(f"username 缺失→{username!r}")
+        username = str(username)
+
+        schema_level = self._guard_schema_level(data, anomalies)
+        months = _parse_int(data.get("num"))
+        if months is None or months < 1:
+            anomalies.note(f"months 缺失/无效（{data.get('num')!r}）→1")
+            months = 1
+        # GUARD_BUY 不含 UserInfo，事件本身给不出头像和粉丝牌（RAW_DATA §2.2）。这是
+        # 已知的事件结构限制（非兜底），故不告警。
+        # TODO: 如需头像/粉丝牌，后续用 uid 走用户资料 API 查询补全。
         sender = {
             "uid": uid,
             "username": username,
-            "badgename": self.config.guard_name,
-            "badgelevel": int(data.get("medal_level") or 0),
+            "avatar_url": "",
+            "badgename": "",
+            "badgelevel": 0,
             "guardstat": schema_level,
         }
 
@@ -476,10 +586,27 @@ class BilibiliEventAdapter:
             "timestamp": _hhmm(),
             "sender": sender,
             "level": schema_level,
-            "newguard": bool(data.get("is_first") or data.get("is_first_guard")),
             "months": months,
             "dwell_seconds": self.config.guard_dwell_seconds_by_schema_level[schema_level],
         }
+
+    @staticmethod
+    def _guard_schema_level(data: Dict[str, Any], anomalies: "_Anomalies") -> int:
+        """Schema guard level (1/2/3 = 舰长/提督/总督). Prefer raw `guard_level`;
+        if it's missing/unrecognized, derive from `gift_name` (舰长/提督/总督)
+        rather than blindly guessing; default to 舰长 only if both fail."""
+        schema_level = _guard_level_to_schema(data.get("guard_level"))
+        if schema_level:
+            return schema_level
+        by_name = {"舰长": 1, "提督": 2, "总督": 3}.get(str(data.get("gift_name") or ""))
+        if by_name:
+            anomalies.note(f"guard_level 无效，按 gift_name 推断为 {data.get('gift_name')}")
+            return by_name
+        anomalies.note(
+            f"guard_level 与 gift_name 均无法识别"
+            f"（guard_level={data.get('guard_level')!r}, gift_name={data.get('gift_name')!r}）→舰长"
+        )
+        return 1
 
 
 class DanmakuHimePreprintApp:
@@ -734,7 +861,7 @@ def _format_author_line(author: Dict[str, Any]) -> str:
 
 
 def _system_sender() -> Dict[str, Any]:
-    return {"uid": SYSTEM_SENDER_ID, "username": SYSTEM_SENDER_NAME, "badgename": "", "badgelevel": 0, "guardstat": 0}
+    return {"uid": SYSTEM_SENDER_ID, "username": SYSTEM_SENDER_NAME, "avatar_url": "", "badgename": "", "badgelevel": 0, "guardstat": 0}
 
 
 def _system_message(text: str, dwell_seconds: int) -> Dict[str, Any]:
@@ -750,16 +877,61 @@ def _system_message(text: str, dwell_seconds: int) -> Dict[str, Any]:
     }
 
 
-def _sender(uid: str, username: str, medal: Any) -> Dict[str, Any]:
-    medal = _as_dict(medal)
-    badgename = str(medal.get("name") or medal.get("medal_name") or "")
-    badgelevel = _to_int(medal.get("level") or medal.get("medal_level"), 0) if badgename else 0
+def _build_sender(
+    uinfo: Any,
+    anomalies: "_Anomalies",
+    *,
+    flat_uid: Any = None,
+    flat_username: Any = None,
+) -> Dict[str, Any]:
+    """Build the schema `sender` from a unified UserInfo object (RAW_DATA §2).
+
+    DANMU_MSG / SEND_GIFT / SUPER_CHAT_MESSAGE all carry this same shape, only at
+    different paths; GUARD_BUY has no UserInfo and is built by hand in _guard().
+    `flat_uid` / `flat_username` are an event's top-level fields, used only as a
+    fallback when the UserInfo lacks them (GIFT/SC carry both).
+
+    Honesty: uid/username/avatar are "必有" per RAW_DATA §2.3, so substituting a
+    placeholder for any of them is recorded on `anomalies`. An absent `medal`
+    (no fan badge) and a 0 `guard_level` are legitimate states, not fallbacks, so
+    they are silent. guardstat is read from medal.guard_level, never
+    user.guard.level (RAW_DATA §2.2 warning).
+    """
+    uinfo = _as_dict(uinfo)
+    base = _as_dict(uinfo.get("base"))
+    medal = _as_dict(uinfo.get("medal"))
+
+    uid = str(uinfo.get("uid") or flat_uid or "")
+    if not uid:
+        anomalies.note("uid 缺失→''")
+
+    name = base.get("name") or flat_username
+    if name:
+        username = str(name)
+    else:
+        username = uid or "匿名用户"
+        anomalies.note(f"username 缺失→{username!r}")
+
+    face = base.get("face")
+    if not face:
+        anomalies.note("avatar_url 缺失→''")
+
+    badgename = str(medal.get("name") or "")  # "" = 无粉丝牌（语义，非兜底）
+    if badgename:
+        badgelevel = _parse_int(medal.get("level"))
+        if badgelevel is None:
+            anomalies.note(f"badgelevel 无法解析（{medal.get('level')!r}）→0")
+            badgelevel = 0
+    else:
+        badgelevel = 0
+
     return {
         "uid": uid,
-        "username": username or uid or "匿名用户",
+        "username": username,
+        "avatar_url": str(face or ""),
         "badgename": badgename,
         "badgelevel": badgelevel,
-        "guardstat": _guard_level_to_schema(medal.get("guard_level") or medal.get("guardLevel")),
+        "guardstat": _guard_level_to_schema(medal.get("guard_level")),
     }
 
 
@@ -771,37 +943,16 @@ def _guard_level_to_schema(raw_level: Any) -> int:
     return {3: 1, 2: 2, 1: 3}.get(level, 0)
 
 
-def _danmaku_medal(info: List[Any]) -> Dict[str, Any]:
-    try:
-        medal = info[0][15]["user"]["medal"]
-        if isinstance(medal, dict):
-            return medal
-    except (KeyError, IndexError, TypeError):
-        pass
-
-    try:
-        medal_list = info[3]
-        if isinstance(medal_list, list) and len(medal_list) >= 2:
-            return {
-                "level": medal_list[0] or 0,
-                "name": medal_list[1] or "",
-                "guard_level": medal_list[10] if len(medal_list) > 10 else 0,
-            }
-    except (KeyError, IndexError, TypeError):
-        pass
-
-    return {}
-
-
 def _as_dict(value: Any) -> Dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _to_int(value: Any, default: int = 0) -> int:
+def _parse_int(value: Any) -> Optional[int]:
+    """Parse to int, or None when missing/unparseable so callers can react."""
     try:
         return int(value)
     except (TypeError, ValueError):
-        return default
+        return None
 
 
 def _parse_float(value: Any) -> Optional[float]:
@@ -901,6 +1052,7 @@ _TOML_SCALAR_FIELDS = (
     "reconnect_delay_seconds", "reconnect_notice_dwell_seconds",
     "stream_end_report_dwell_seconds", "debug_forward_errors", "debug_error_dwell_seconds",
     "gift_price_to_yuan_divisor", "cents_per_yuan", "superchat_observation_threshold_yuan",
+    "superchat_dwell_multiplier",
 )
 # File-name keys: stored as bare names in the TOML, resolved relative to BASE_DIR.
 _TOML_PATH_FIELDS = ("event_log_file", "stats_output_file", "qr_image_file", "credential_file", "log_file")
@@ -933,8 +1085,6 @@ def load_config(path: Path = CONFIG_FILE) -> AppConfig:
     try:
         guard_raw = require("guard_dwell_seconds_by_schema_level")
         guard = {int(k): int(v) for k, v in guard_raw.items()}
-        # "below" omitted on the final tier means "this amount and above".
-        tiers = [(tier.get("below"), tier["dwell_seconds"]) for tier in require("superchat_dwell_tiers")]
         authors = [dict(author) for author in require("authors")]
         kwargs: Dict[str, Any] = {key: require(key) for key in _TOML_SCALAR_FIELDS}
         kwargs.update({key: BASE_DIR / require(key) for key in _TOML_PATH_FIELDS})
@@ -944,7 +1094,6 @@ def load_config(path: Path = CONFIG_FILE) -> AppConfig:
     return AppConfig(
         default_title=require("title"),
         authors=authors,
-        superchat_dwell_tiers=tiers,
         guard_dwell_seconds_by_schema_level=guard,
         **kwargs,
     )

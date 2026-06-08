@@ -1,2 +1,5 @@
+*.txt
+*.zip
+credential.json
 __pycache__
 
