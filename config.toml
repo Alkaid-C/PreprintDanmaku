@@ -4,7 +4,7 @@
 #  改完保存，重新运行 python3 app.py 即可生效。
 #
 #  填写规则：
-#    · 文字要用英文双引号包起来，例如  guard_name = "埃抖露"
+#    · 文字要用英文双引号包起来，例如  host = "127.0.0.1"
 #    · 数字直接写，不要加引号，例如    port = 19216
 #    · true / false 用来表示「是 / 否」，全小写、不加引号
 #    · # 号开头的是注释，给你看的，程序会忽略
@@ -20,9 +20,6 @@
 # 直播间号（B 站直播间网址 live.bilibili.com/ 后面那串数字）
 room_id = 1921712061
 
-# 对大航海（舰长/提督/总督）成员的称呼
-guard_name = "埃抖露"
-
 
 # ———————————————— 网页服务 ————————————————
 
@@ -33,18 +30,6 @@ port = 19216
 # 使用哪一套前端（指向 frontends 下的目录，里面要有 index.html 和 frontend.json）
 # 换前端只改这一行；前端与后端的 API 版本必须一致，否则启动会被拒绝
 frontend = "frontends/preprint"
-
-
-# ———————————————— 论文刊头（页面顶部的“论文”信息）————————————————
-
-# 右上角的来源印章文字
-stamp_label = "Bilibili"
-# 预印本编号（一般填直播间号）
-preprint_id = "1921712061"
-# 学科分类
-category = "虚拟.日常"
-# 论文标题
-title = "灰域梦游的现象学考察"
 
 
 # ———————————————— 输出文件名 ————————————————
@@ -114,19 +99,3 @@ superchat_dwell_multiplier = 1.0
 2 = 600
 3 = 3600
 
-
-# ———————————————— 作者列表 ————————————————
-# 每位作者一段 [[authors]]，可增删。
-#   name          = 显示名
-#   affiliation   = 单位 / 所属
-#   corresponding = 是否通讯作者（true / false）
-
-[[authors]]
-name = "埃瑟斯Asuse"
-affiliation = "环角事务所"
-corresponding = false
-
-[[authors]]
-name = "埃斯卡尔Askr"
-affiliation = "环角事务所"
-corresponding = true

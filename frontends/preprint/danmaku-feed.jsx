@@ -26,7 +26,7 @@ const GUARD_NAME = ['', '舰长', '提督', '总督'];
 const GUARD_ENV = ['', 'Lemma', 'Theorem', 'Axiom'];     // guard level 1/2/3
 const SUPER_ENV = ['', 'Remark', 'Observation'];          // superchat level 1/2
 
-// masthead meta — filled by the backend `init` event
+// masthead meta — filled by this frontend's config.json plus backend `init.room_info`
 const DM_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DM_TODAY = (() => { const d = new Date(); return d.getDate() + ' ' + DM_MONTHS[d.getMonth()] + ' ' + d.getFullYear(); })();
 const DM_META = {
@@ -50,13 +50,26 @@ function useDanmakuStream() {
   const expire = React.useRef({});
   const seen = React.useRef({});
 
+  const applyPreprintConfig = React.useCallback((config) => {
+    const c = config || {};
+    if (c.stamp_label) DM_META.stampLabel = c.stamp_label;
+    if (c.title) DM_META.title = c.title;
+    if (c.preprint_id) DM_META.preprintId = c.preprint_id;
+    if (c.category) DM_META.category = c.category;
+    if (Array.isArray(c.authors) && c.authors.length) DM_META.authors = c.authors;
+    setMetaVersion((v) => v + 1);
+  }, []);
+
   const applyInit = React.useCallback((ev) => {
-    if (ev.stamp_label) DM_META.stampLabel = ev.stamp_label;
-    if (Array.isArray(ev.authors)) DM_META.authors = ev.authors;
-    if (ev.anchor) DM_META.anchor = ev.anchor;
-    if (ev.room_title) DM_META.title = ev.room_title;
-    if (ev.preprint_id) DM_META.preprintId = ev.preprint_id;
-    if (ev.category) DM_META.category = ev.category;
+    const roomInfo = ev.room_info || {};
+    DM_META.roomInfo = roomInfo;
+    if (!DM_META.title && roomInfo.title) DM_META.title = roomInfo.title;
+    if (!DM_META.preprintId && roomInfo.room_id) DM_META.preprintId = String(roomInfo.room_id);
+    if (!DM_META.category) {
+      const area = [roomInfo.parent_area_name, roomInfo.area_name].filter(Boolean).join('.');
+      if (area) DM_META.category = area;
+    }
+    if (!DM_META.anchor && roomInfo.streamer_uname) DM_META.anchor = roomInfo.streamer_uname;
     setMetaVersion((v) => v + 1);
   }, []);
 
@@ -179,6 +192,19 @@ function useDanmakuStream() {
 
   React.useEffect(() => {
     let es = null;
+    let configCancelled = false;
+
+    fetch('config.json', { cache: 'no-store' })
+      .then((response) => {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      })
+      .then((config) => {
+        if (!configCancelled) applyPreprintConfig(config);
+      })
+      .catch((err) => {
+        console.error('Preprint config load failed:', err);
+      });
 
     if (!window.EventSource || window.location.protocol === 'file:') {
       console.error('DanmakuHime requires the backend server and EventSource support.');
@@ -199,10 +225,11 @@ function useDanmakuStream() {
     }
 
     return () => {
+      configCancelled = true;
       if (es) es.close();
       Object.values(expire.current).forEach(clearTimeout);
     };
-  }, [adapt, emit]);
+  }, [adapt, applyPreprintConfig, emit]);
 
   const danmaku = body.filter((e) => e.type === 'normal');
   const gifts = body.filter((e) => e.type === 'gift');

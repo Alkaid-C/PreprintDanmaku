@@ -6,7 +6,7 @@
   "api_version": "0.3",
   "payload": {
     "index.html": "3b1556f08f2f5f0fc167f2bb2fa41322db52beb61b33658d6dc0b6c6530beead",
-    "*.jsx": "95a177f2b93cd243ce07afb05883521e6a21ca6b2d0791f90a7dd7b2a86d559a",
+    "*.jsx": "916ec1c9b2160e1e994c7246e078627bb1c8f3035c2acfbfa446d44bf266741c",
     "vendor/**": "25aaa74c61fa820a08a003bd3154a3ca3b0f7259bb1e2ad343da601e87da39e5",
     "fonts/**": "8a5eb92f199d744b9e9a0bfe8f1ddb26dfe5f24cc56df44c562f7a01cf2f2ab6"
   }

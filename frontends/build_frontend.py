@@ -51,11 +51,11 @@ SELF_PATH = Path(__file__).resolve()
 META_KEYS = ("name", "version", "codename", "release_date", "api_version")
 OPTIONAL_META = frozenset({"codename"})
 
-# Names that may live in a frontend folder but are never part of the served/hashed
-# payload: a frontend's `.project`, its generated manifest, and a builder copy left
-# behind by unzipping a shipped package. Skipped from the candidate set on BOTH
-# sides so a greedy pattern can't pull them in — MUST match app.py exactly.
-NON_PAYLOAD = frozenset({"frontend.json", ".project"})
+# Names that may live in a frontend folder but are never part of the hashed
+# payload: package metadata/tooling and user-editable frontend-local config.
+# Skipped from the candidate set on BOTH sides so a greedy pattern can't pull
+# them in — MUST match app.py exactly.
+NON_PAYLOAD = frozenset({"frontend.json", "build_frontend.py", ".project", "config.json"})
 
 
 def read_meta(source: str, key: str) -> str:
@@ -121,20 +121,33 @@ def group_hash(frontend_dir: Path, files: list[Path]) -> str:
 def build_zip(frontend_dir: Path, payload: set[Path]) -> tuple[Path, int]:
     """Pack one frontend into DanmakuHime-frontend-<dir>-YYYY-MM-DD-HH-MM.zip.
 
-    Bundles the matched payload plus the frontend's `.project` and freshly written
-    manifest, AND a copy of this shared builder dropped in as <dir>/build_frontend.py
-    — so the zip stays a self-contained, rebuildable drop-in even though the repo
-    keeps a single shared builder. Unzip into the backend's frontends/ and point
-    config.toml at frontends/<dir>. Run after the manifest is written.
+    Bundles the matched payload plus the frontend's `.project`, freshly written
+    manifest, optional config.json, AND a copy of this shared builder dropped in
+    as <dir>/build_frontend.py — so the zip stays a self-contained, rebuildable
+    drop-in even though the repo keeps a single shared builder. Unzip into the
+    backend's frontends/ and point config.toml at frontends/<dir>. Run after the
+    manifest is written.
     """
     dirname = frontend_dir.name
     stem = f"DanmakuHime-frontend-{dirname}-" + datetime.now().strftime("%Y-%m-%d-%H-%M")
     zip_path = frontend_dir / f"{stem}.zip"
 
-    members = sorted(payload | {frontend_dir / ".project", frontend_dir / "frontend.json"})
+    members = sorted(
+        payload
+        | {
+            path
+            for path in (
+                frontend_dir / ".project",
+                frontend_dir / "frontend.json",
+                frontend_dir / "config.json",
+            )
+            if path.is_file()
+        }
+    )
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in members:
             zf.write(path, f"{dirname}/{path.relative_to(frontend_dir).as_posix()}")
+        zf.write(SELF_PATH, f"{dirname}/build_frontend.py")
 
     return zip_path, len(members) + 1
 

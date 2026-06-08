@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-DanmakuHime Preprint
+DanmakuHime
 
-Live Bilibili danmaku backend for the arXiv-style frontend.
+Live Bilibili danmaku backend with swappable frontends.
 """
 
 from __future__ import annotations
@@ -29,20 +29,20 @@ from flask import Flask, Response, request, send_from_directory
 from flask_cors import CORS
 
 
-APP_VERSION = "0.4.2"
+APP_VERSION = "0.4.3"
 APP_CODENAME = "Out-of-the-loop"
-RELEASE_DATE = "Jun 7, 2026"
+RELEASE_DATE = "Jun 8, 2026"
 # Front/back contract version — the SCHEMA.md event-shape version, independent of
 # APP_VERSION and of any frontend's own version. The backend refuses to serve a
 # frontend whose manifest api_version does not equal this exactly (see
 # check_frontend), so a backend package and a frontend package ship separately
 # and combine iff their api_version strings match. Bump this whenever the event
 # contract in SCHEMA.md changes in a way the frontend must track.
-API_VERSION = "0.2"
+API_VERSION = "0.3"
 # Codenames are display-only: they ride along in the manifests and are printed at
 # startup, but DO NOT participate in any version/integrity check (a codename never
 # blocks startup or front/back pairing). Version strings are the only thing matched.
-API_CODENAME = "多少橱窗"
+API_CODENAME = "回忆是抓不到的月光"
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.toml"
 BACKEND_MANIFEST = BASE_DIR / "backend.json"
@@ -62,20 +62,20 @@ log = logging.getLogger("danmakuhime")
 
 # ==================== Configuration ====================
 #
-# `config.toml` (alongside this file) is the single source of truth for every
-# tunable. There are no built-in defaults, env vars, or CLI flags — load_config()
-# reads config.toml and fails fast if it is missing, unreadable, or short a key.
-# AppConfig below is just the typed container the loader populates.
+# `config.toml` (alongside this file) is the backend runtime config. There are no
+# built-in defaults, env vars, or CLI flags — load_config() reads config.toml and
+# fails fast if it is missing, unreadable, or short a key. AppConfig below is just
+# the typed container the loader populates.
 
 SYSTEM_SENDER_ID = "0"
-SYSTEM_SENDER_NAME = "Askr"
+SYSTEM_SENDER_NAME = "DanmakuHime"
+ROOM_INFO_FETCH_RETRIES = 3
 
 
 @dataclass
 class AppConfig:
     # Livestream target
     room_id: int
-    guard_name: str
 
     # Web server
     host: str
@@ -83,13 +83,6 @@ class AppConfig:
     # Frontend package directory (holds index.html + frontend.json); resolved
     # relative to BASE_DIR. The backend serves and integrity-checks this folder.
     frontend: Path
-
-    # Masthead sent by the backend init event
-    stamp_label: str
-    preprint_id: str
-    category: str
-    default_title: str
-    authors: List[Dict[str, Any]]
 
     # Login (QR login is handled by bilibili_api.login_v2; we only poll it)
     login_poll_interval_seconds: int
@@ -246,7 +239,7 @@ class CredentialStore:
     Policy, keyed on the age of `obtained_at`:
       < load_max_age      -> load and use as-is
       load .. refresh_max -> refresh() and re-stamp
-      >= refresh_max      -> caller should re-login (see DanmakuHimePreprintApp)
+      >= refresh_max      -> caller should re-login (see DanmakuHimeApp)
     """
 
     def __init__(self, path: Path):
@@ -627,7 +620,7 @@ class BilibiliEventAdapter:
         return 1
 
 
-class DanmakuHimePreprintApp:
+class DanmakuHimeApp:
     def __init__(self, config: AppConfig, frontend_manifest: Dict[str, Any]):
         self.config = config
         self.frontend_dir = config.frontend
@@ -708,12 +701,12 @@ class DanmakuHimePreprintApp:
         self.config.event_log_file.write_text("", encoding="utf-8")
         self._start_server()
         self._log_startup()
+        self._publish_room_init()
 
         credential = self._login_until_success()
         if not credential:
             return
 
-        self._publish_configured_init()
         self._connect_loop(credential)
 
     def _login_until_success(self) -> Optional[Credential]:
@@ -819,12 +812,17 @@ class DanmakuHimePreprintApp:
         )
         log.info("前端地址：http://%s:%s/", self.config.host, self.config.port)
         log.info("目标直播间：%s", self.config.room_id)
-        log.debug("目标粉丝牌：%s", self.config.guard_name)
 
-    def _publish_configured_init(self) -> None:
+    def _publish_room_init(self) -> None:
         init_event = self._build_init()
-        log.debug("页面标题：%s", init_event.get("room_title", ""))
-        log.debug("页面作者：%s", ", ".join(author.get("name", "") for author in init_event.get("authors", [])))
+        room_info = init_event["room_info"]
+        log.info(
+            "直播间信息：%s / %s（%s）",
+            room_info.get("streamer_uname", ""),
+            room_info.get("title", ""),
+            room_info.get("room_id", ""),
+        )
+        log.debug("直播间 room_info：%s", json.dumps(room_info, ensure_ascii=False))
         self.hub.set_init(init_event)
 
     def _connect_loop(self, credential: Credential) -> None:
@@ -864,24 +862,42 @@ class DanmakuHimePreprintApp:
         self.hub.publish(_system_message(text, self.config.reconnect_notice_dwell_seconds))
 
     def _build_init(self) -> Dict[str, Any]:
+        raw_room_info = self._fetch_room_info()
         event = {
             "type": "init",
             "id": 0,
             "timestamp": _hhmm(),
+            "room_info": (
+                _room_info_from_api_response(raw_room_info, self.config.room_id)
+                if raw_room_info is not None
+                else _empty_room_info(self.config.room_id)
+            ),
         }
-        if self.config.stamp_label:
-            event["stamp_label"] = self.config.stamp_label
-        if self.config.preprint_id:
-            event["preprint_id"] = self.config.preprint_id
-        if self.config.category:
-            event["category"] = self.config.category
-        if self.config.default_title:
-            event["room_title"] = self.config.default_title
-        if self.config.authors:
-            event["authors"] = self.config.authors
-            first_author = self.config.authors[0]
-            event["anchor"] = _format_author_line(first_author)
         return event
+
+    def _fetch_room_info(self) -> Optional[Dict[str, Any]]:
+        for attempt in range(ROOM_INFO_FETCH_RETRIES + 1):
+            try:
+                return sync(live.LiveRoom(self.config.room_id).get_room_info())
+            except BaseException as exc:
+                if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                    raise
+                if attempt >= ROOM_INFO_FETCH_RETRIES:
+                    log.warning(
+                        "获取直播间信息连续失败，使用空 init 信息继续启动：%s",
+                        _exception_summary(exc),
+                        exc_info=True,
+                    )
+                    return None
+                log.warning(
+                    "获取直播间信息失败：%s，%s 秒后重试（%s/%s）。",
+                    _exception_summary(exc),
+                    self.config.login_retry_delay_seconds,
+                    attempt + 1,
+                    ROOM_INFO_FETCH_RETRIES,
+                )
+                time.sleep(self.config.login_retry_delay_seconds)
+        return None
 
 
 def _hhmm() -> str:
@@ -899,9 +915,49 @@ def _exception_summary(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
 
 
-def _format_author_line(author: Dict[str, Any]) -> str:
-    parts = [str(author.get("name") or ""), str(author.get("affiliation") or "")]
-    return "，".join(part for part in parts if part)
+def _room_info_from_api_response(api_response: Any, configured_room_id: int) -> Dict[str, Any]:
+    data = _as_dict(api_response)
+    room = _as_dict(data.get("room_info"))
+    anchor = _as_dict(_as_dict(data.get("anchor_info")).get("base_info"))
+    streamer_uid = _parse_int(room.get("uid"))
+    return _room_info_dict(
+        room_id=configured_room_id,
+        title=room.get("title"),
+        streamer_uname=anchor.get("uname"),
+        streamer_uid=streamer_uid if streamer_uid is not None else 0,
+        streamer_avatar_url=anchor.get("face"),
+        parent_area_name=room.get("parent_area_name"),
+        area_name=room.get("area_name"),
+        cover_image_url=room.get("cover"),
+    )
+
+
+def _empty_room_info(configured_room_id: int) -> Dict[str, Any]:
+    return _room_info_dict(room_id=configured_room_id)
+
+
+def _room_info_dict(
+    *,
+    room_id: int,
+    title: Any = "",
+    streamer_uname: Any = "",
+    streamer_uid: Any = 0,
+    streamer_avatar_url: Any = "",
+    parent_area_name: Any = "",
+    area_name: Any = "",
+    cover_image_url: Any = "",
+) -> Dict[str, Any]:
+    uid = _parse_int(streamer_uid)
+    return {
+        "room_id": room_id,
+        "title": str(title or ""),
+        "streamer_uname": str(streamer_uname or ""),
+        "streamer_uid": uid if uid is not None else 0,
+        "streamer_avatar_url": str(streamer_avatar_url or ""),
+        "parent_area_name": str(parent_area_name or ""),
+        "area_name": str(area_name or ""),
+        "cover_image_url": str(cover_image_url or ""),
+    }
 
 
 def _system_sender() -> Dict[str, Any]:
@@ -1096,11 +1152,11 @@ def check_version() -> None:
     _verify_hashes(manifest.get("hashes"), BASE_DIR, INTEGRITY_FILES, BACKEND_MANIFEST.name)
 
 
-# Files that live in a frontend folder but are never part of the served/hashed
-# payload: the build tooling, its `.project` allowlist, and the manifest itself.
+# Files that live in a frontend folder but are never part of the hashed payload:
+# package metadata/tooling and user-editable frontend-local configuration.
 # Skipped from the candidate set so a greedy pattern can't pull them in — MUST
 # match build_frontend.py's NON_PAYLOAD exactly.
-_FRONTEND_NON_PAYLOAD = frozenset({"frontend.json", "build_frontend.py", ".project"})
+_FRONTEND_NON_PAYLOAD = frozenset({"frontend.json", "build_frontend.py", ".project", "config.json"})
 
 
 def _frontend_candidates(frontend_dir: Path) -> List[Path]:
@@ -1179,10 +1235,8 @@ def check_frontend(config: AppConfig) -> Dict[str, Any]:
 
 
 # Scalar config.toml keys that map 1:1 onto an AppConfig field of the same name.
-# (`title` -> default_title and the structured keys below are handled separately.)
 _TOML_SCALAR_FIELDS = (
-    "room_id", "guard_name", "host", "port",
-    "stamp_label", "preprint_id", "category",
+    "room_id", "host", "port",
     "login_poll_interval_seconds", "login_retry_delay_seconds",
     "credential_load_max_age_seconds", "credential_refresh_max_age_seconds",
     "history_size", "subscriber_queue_size", "sse_heartbeat_seconds",
@@ -1200,7 +1254,7 @@ _TOML_PATH_FIELDS = (
 
 
 def load_config(path: Path = CONFIG_FILE) -> AppConfig:
-    """Build the runtime config from config.toml — the single source of truth.
+    """Build the backend runtime config from config.toml.
 
     Raises ConfigError if the file is missing, unparseable, or short any key.
     """
@@ -1226,15 +1280,12 @@ def load_config(path: Path = CONFIG_FILE) -> AppConfig:
     try:
         guard_raw = require("guard_dwell_seconds_by_schema_level")
         guard = {int(k): int(v) for k, v in guard_raw.items()}
-        authors = [dict(author) for author in require("authors")]
         kwargs: Dict[str, Any] = {key: require(key) for key in _TOML_SCALAR_FIELDS}
         kwargs.update({key: BASE_DIR / require(key) for key in _TOML_PATH_FIELDS})
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         raise ConfigError(f"配置文件 {path.name} 的某个值格式不对：{exc}") from exc
 
     return AppConfig(
-        default_title=require("title"),
-        authors=authors,
         guard_dwell_seconds_by_schema_level=guard,
         **kwargs,
     )
@@ -1308,7 +1359,7 @@ def main() -> None:
         frontend_manifest = check_frontend(config)
     except VersionMismatchError as exc:
         raise SystemExit(str(exc))
-    app = DanmakuHimePreprintApp(config, frontend_manifest)
+    app = DanmakuHimeApp(config, frontend_manifest)
     app.run()
 
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## What this is
 
-A Bilibili live-stream danmaku wall rendered as an arXiv-style academic preprint. The backend connects to a live room, converts Bilibili events into a typed SSE event stream, and the browser frontend renders each event as a typographic element of a fake paper (citations, theorems, acknowledgments).
+A Bilibili live-stream danmaku backend with swappable browser frontends. The backend connects to a live room and converts Bilibili events into a typed SSE event stream. The bundled `preprint` frontend renders each event as a typographic element of a fake paper (citations, theorems, acknowledgments).
 
 ## Run
 
@@ -16,7 +16,7 @@ python3 app.py                                 # starts server, prints a login Q
 
 Scan the QR with the Bilibili mobile app to log in, then open `http://127.0.0.1:19216/`. The page **only** works when served by the backend — it subscribes to `/stream` and has no offline/mock mode (opening the `.html` via `file://` fails by design).
 
-All settings live in **`config.toml`** (alongside `app.py`) — the single source of truth. Edit it and restart. There are **no CLI flags and no env vars**; basics (room id, guard name, masthead, output filenames) are at the top level, advanced tuning under `[advanced]`, and `[[authors]]` / `[advanced.guard_dwell_seconds_by_schema_level]` are the structured sections. To forward backend errors to the UI, set `debug_forward_errors = true` under `[advanced]`.
+Backend runtime settings live in **`config.toml`** (alongside `app.py`). Edit it and restart. There are **no CLI flags and no env vars**; basics (room id, selected frontend, output filenames) are at the top level, advanced tuning under `[advanced]`, and `[advanced.guard_dwell_seconds_by_schema_level]` is the structured section. Frontend-specific interpretation lives in that frontend's own folder; for `preprint`, masthead fields are in `frontends/preprint/config.json`. To forward backend errors to the UI, set `debug_forward_errors = true` under `[advanced]`.
 
 There is no test suite or linter. There **is** a build step per package — a version/integrity guard (see below): `build_backend.py` for the backend, and the shared `frontends/build_frontend.py <name>` (or `--all`) for a frontend. Dependencies are listed in `requirements.txt` (lower-bound pins): `bilibili-api-python` (`import bilibili_api`, incl. `login_v2`), `Flask`, `Flask-Cors`, and `pathspec` (gitignore-style matching for the frontend `.project` allowlist, used by both `app.py` and `build_frontend.py`). Install with `python3 -m pip install -r requirements.txt`. After the first successful login a `credential.json` is written next to `app.py` and reused on subsequent runs (see the persistence policy below).
 
@@ -41,10 +41,11 @@ A backend and a swappable frontend, bound by one contract. **`SCHEMA.md` is the 
 
 ### Backend (`app.py`)
 
-Single file, class-per-responsibility. The flow in `DanmakuHimePreprintApp.run()`:
+Single file, class-per-responsibility. The flow in `DanmakuHimeApp.run()`:
 1. Start Flask in a daemon thread (serves the static files + `/stream` SSE + `/health`).
-2. Obtain a `bilibili_api.Credential` via `_obtain_credential` (see persistence policy below).
-3. Publish the `init` masthead event, then `live.LiveDanmaku(...).on("ALL")` → `BilibiliEventAdapter.handle_event`, reconnecting forever on disconnect.
+2. Publish the `init` event by calling `live.LiveRoom(room_id).get_room_info()` and packing neutral facts into `room_info`; this retries three times using `login_retry_delay_seconds`, then publishes an empty same-shape `room_info` and keeps starting.
+3. Obtain a `bilibili_api.Credential` via `_obtain_credential` (see persistence policy below).
+4. Connect `live.LiveDanmaku(...).on("ALL")` → `BilibiliEventAdapter.handle_event`, reconnecting forever on disconnect.
 
 Key components:
 - **`BilibiliLoginManager`** — QR-code login, delegated entirely to `bilibili_api.login_v2.QrCodeLogin` (we only poll `check_state()` and print the terminal/PNG QR). It returns a full `Credential` including `buvid3` and `ac_time_value` (the refresh token), so credentials can later be refreshed without re-scanning.
@@ -53,7 +54,7 @@ Key components:
 - **`BilibiliEventAdapter`** — the only place that knows Bilibili's raw event format. `_convert` maps `DANMU_MSG`→`danmaku`, `SEND_GIFT`→`gift`, `SUPER_CHAT_MESSAGE`→`superchat`, `GUARD_BUY`→`guard`. DANMU_MSG / SEND_GIFT / SUPER_CHAT_MESSAGE share one unified user parser (`_sender_from_uinfo` over the UserInfo object); Bilibili's nested/positional payloads are fragile, so parsing uses defensive helpers (`_as_dict`, `_to_int`, `_danmaku_uinfo`'s positional fallback, `_apply_flat_fallback`). The special `PREPARING` event (stream ended) triggers a stats save + an on-screen report.
 - **`StatsTracker`** — thread-safe per-uid accumulation of gift/SC yuan and guard months; written to `STATS_OUTPUT_FILENAME` on stream end and on Ctrl+C.
 
-**`config.toml` is the single source of truth for every tunable** — there are no built-in defaults, env vars, or CLI flags. The `AppConfig` dataclass (under the `# Configuration` banner) is just the typed container, with **no field defaults**; `load_config()` reads `config.toml` and constructs it, raising `ConfigError` (→ a clean `SystemExit` from `main`) if the file is missing, unparseable, or short any key — i.e. it fails fast rather than falling back. **When adding a field, update `config.toml`, the `AppConfig` dataclass, and `_TOML_SCALAR_FIELDS`/`_TOML_PATH_FIELDS` together.** TOML notes: basic keys are top-level, advanced ones live under `[advanced]` (the loader looks in both via `require()`); `title` maps to `default_title`; the `_TOML_PATH_FIELDS` keys are resolved against `BASE_DIR` — the file-name keys are bare names, plus `frontend`, a directory (e.g. `frontends/preprint`) selecting the served + integrity-checked frontend; `authors` is `[[authors]]`; `guard_dwell_seconds_by_schema_level` is a string-keyed table parsed to int keys.
+**`config.toml` is the backend runtime config** — there are no built-in defaults, env vars, or CLI flags. The `AppConfig` dataclass (under the `# Configuration` banner) is just the typed container, with **no field defaults**; `load_config()` reads `config.toml` and constructs it, raising `ConfigError` (→ a clean `SystemExit` from `main`) if the file is missing, unparseable, or short any key — i.e. it fails fast rather than falling back. **When adding a backend field, update `config.toml`, the `AppConfig` dataclass, and `_TOML_SCALAR_FIELDS`/`_TOML_PATH_FIELDS` together.** TOML notes: basic keys are top-level, advanced ones live under `[advanced]` (the loader looks in both via `require()`); the `_TOML_PATH_FIELDS` keys are resolved against `BASE_DIR` — the file-name keys are bare names, plus `frontend`, a directory (e.g. `frontends/preprint`) selecting the served + integrity-checked frontend; `guard_dwell_seconds_by_schema_level` is a string-keyed table parsed to int keys.
 
 ### Logging
 
@@ -61,11 +62,11 @@ Key components:
 
 ### Frontend (`frontends/<name>/` — e.g. `frontends/preprint/index.html` + `danmaku-feed.jsx`)
 
-Each frontend is a self-contained folder under `frontends/`; the backend serves the **one** picked by config's `frontend` key. Its entry file **must** be `index.html` (with the truth-source comment block at the top), served at `/`. Flask mounts that folder at the web root (`static_folder=<frontend_dir>, static_url_path=""`), so `index.html`'s relative refs (`vendor/…`, `fonts/…`, `danmaku-feed.jsx`) resolve unchanged; an `after_request` hook re-tags any `.jsx` response as `text/babel` (by extension — filenames are no longer hardcoded in routes).
+Each frontend is a self-contained folder under `frontends/`; the backend serves the **one** picked by config's `frontend` key. Its entry file **must** be `index.html` (with the truth-source comment block at the top), served at `/`. Flask mounts that folder at the web root (`static_folder=<frontend_dir>, static_url_path=""`), so `index.html`'s relative refs (`vendor/…`, `fonts/…`, `danmaku-feed.jsx`, `config.json`) resolve unchanged; an `after_request` hook re-tags any `.jsx` response as `text/babel` (by extension — filenames are no longer hardcoded in routes). Frontend-local `config.json` files are served and packaged but intentionally excluded from payload hashing.
 
 No build tooling — React 18, ReactDOM, and Babel-standalone are served **locally** from the frontend's `vendor/` (no CDN; the whole page works offline as long as the backend is up) and JSX is transpiled **in the browser** (`<script type="text/babel">`). Fonts are self-hosted too: `fonts/google/fonts.css` + the `fonts/google/files/` woff2 chunks provide **Tinos** (latin, the open metric-compatible Times New Roman substitute) and **Noto Serif SC** (CJK). The font stacks are pinned to the two hosted fonts with no client-system fallbacks: `--cm: "Tinos"`, `--cjk: "Noto Serif SC"`, `--serif: var(--cm), var(--cjk)` (latin from Tinos, CJK glyphs from Noto). `index.html` holds all CSS (LaTeX-style serif + Noto Serif SC) and mounts `<App>`; `danmaku-feed.jsx` holds the logic.
 
-`useDanmakuStream` connects `EventSource('/stream')`, dedupes by `type:id`, and `adapt()`s backend fields into internal shapes. Rendering model (documented atop the jsx — `SCHEMA.md` is the backend field contract only and deliberately says nothing about rendering):
+`useDanmakuStream` loads `config.json`, connects `EventSource('/stream')`, dedupes by `type:id`, and `adapt()`s backend fields into internal shapes. The backend `init` now supplies only `room_info`; the preprint masthead title/category/authors come from `frontends/preprint/config.json`, with `room_info` used as fallback. Rendering model (documented atop the jsx — `SCHEMA.md` is the backend field contract only and deliberately says nothing about rendering):
 - **One shared FIFO queue** (`CAP`) holds danmaku + gifts. One in / one oldest out. Danmaku render as scrolling **References** (clip at top); gifts as the **Acknowledgments** band (retire = animated height collapse).
 - **SuperChat + guard** bypass the FIFO into a **top pinned zone** (`PIN_MAX`, max 3) with a real time-based dwell (`dwell_seconds`, authoritative from backend). SuperChat→Remark/Observation, guard→Lemma/Theorem/Axiom.
 

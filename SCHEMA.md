@@ -1,8 +1,8 @@
-# 弹幕预印本 · SSE Schema
+# DanmakuHime · SSE Schema
 
 后端通过 SSE 推送一条事件流。本文件是**后端→前端的字段契约**,只规定字段与语义,不规定前端如何渲染。
 
-> **契约版本(API_VERSION):`0.2`(代号「多少橱窗」)** —— 本契约的版本号(代号仅供展示、不参与校验)。真相源是 `app.py` 的 `API_VERSION` 常量与各前端 `index.html` 顶部注释里的 `api_version`(本文档不随发布包分发,仅作人读说明)。后端只服务 `api_version` 与之**精确相等**的前端。**改动本文件中的字段/语义时,请同步提升 `API_VERSION`。**
+> **契约版本(API_VERSION):`0.3`(代号「回忆是抓不到的月光」)** —— 本契约的版本号(代号仅供展示、不参与校验)。真相源是 `app.py` 的 `API_VERSION` 常量与各前端 `index.html` 顶部注释里的 `api_version`(本文档不随发布包分发,仅作人读说明)。后端只服务 `api_version` 与之**精确相等**的前端。**改动本文件中的字段/语义时,请同步提升 `API_VERSION`。**
 
 ---
 
@@ -90,14 +90,22 @@ data: {"type":"danmaku","id":1024,"timestamp":"21:03","sender":{...},"text":"这
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `stamp_label` | string | — | 来源标签,如 `Bilibili` |
-| `preprint_id` | string | — | 条目标识,如 `1921712061` |
-| `category` | string | — | 分类,如 `虚拟.日常` |
-| `authors` | array | — | 作者列表;每项可含 `name` / `affiliation` / `corresponding` |
-| `anchor` | string | — | 兼容旧字段: 单行作者名 |
-| `room_title` | string | — | 直播间标题 |
+| `room_info` | dict | ✓ | 直播间中立事实;见下表 |
 
-> 报头字段无默认值,后端需通过 `init` 全部下发。
+`room_info`:
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| `room_id` | int | ✓ | 配置文件指定的直播间号 |
+| `title` | string | ✓ | 直播间标题,来自 `LiveRoom.get_room_info().room_info.title` |
+| `streamer_uname` | string | ✓ | 主播用户名,来自 `anchor_info.base_info.uname` |
+| `streamer_uid` | int | ✓ | 主播 uid,来自 `room_info.uid` |
+| `streamer_avatar_url` | string | ✓ | 主播头像 URL,来自 `anchor_info.base_info.face` |
+| `parent_area_name` | string | ✓ | 父分区名,来自 `room_info.parent_area_name` |
+| `area_name` | string | ✓ | 子分区名,来自 `room_info.area_name` |
+| `cover_image_url` | string | ✓ | 直播间封面 URL,来自 `room_info.cover` |
+
+> `init` 只承载中立事实。除 `room_id` 来自后端配置外,其余字段来自 `LiveRoom.get_room_info()`。如果该公开接口连续失败,后端仍会发送同形状的 `room_info` 并继续启动:字符串字段为空串,`streamer_uid` 为 `0`。标题、作者、分类、主题等前端解释配置不属于本契约,由具体前端自行加载。
 
 ---
 
@@ -109,7 +117,7 @@ data: {"type":"danmaku","id":1024,"timestamp":"21:03","sender":{...},"text":"这
 const es = new EventSource('/stream');
 es.onmessage = (m) => {
   const ev = JSON.parse(m.data);
-  if (ev.type === 'init') applyInit(ev);   // 填充 DM_META
+  if (ev.type === 'init') applyInit(ev);   // 读取 ev.room_info
   else emit(adapt(ev));                     // adapt(): 后端字段 → 内部事件形状
 };
 ```

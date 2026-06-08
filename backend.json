@@ -1,10 +1,10 @@
 {
-  "app_version": "0.5.0",
+  "app_version": "0.4.3",
   "app_codename": "Out-of-the-loop",
   "release_date": "Jun 8, 2026",
   "api_version": "0.3",
   "api_codename": "回忆是抓不到的月光",
   "hashes": {
-    "app.py": "ec15dea2f11dd53979ab7612eca0abb9a6cc624d9c5a25ef804a8e3802c8196e"
+    "app.py": "7e3162f1ff1c25f8259e75d92faa412ed920ff58e8c36a218b531785623fd476"
   }
 }
