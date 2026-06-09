@@ -13,8 +13,22 @@
 - **`preprint`** —— arXiv 预印本论文风格的弹幕机。
 - **`example`** —— 一个极简前端样例。
 
-### FAQ
+## FAQ
 
 ##### 为何重复造轮子？
 
 想自己做前端，但是Laplace Chat的文档看不懂。遂前后端都自己造。
+
+##### 如何运行？
+
+复制[`CLAUDE.md`](CLAUDE.md)给豆包，然后问：“豆包豆包，如何运行？”
+
+##### 我想要一个这样儿的弹幕机
+
+复制[`frontends/CLAUDE.md`](frontends/CLAUDE.md)和[`SCHEMA.md`](SCHEMA.md)给豆包，然后说：“豆包豆包，我想要一个这样儿的弹幕机，帮我写一个。”
+
+## 许可证
+
+本项目中除 `frontends/preprint/*` 以外的部分以 [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html) 协议开源。
+
+`frontends/preprint/*`（`preprint` 前端）不在此开源协议范围内，保留所有权利，未经许可不得以任何方式使用。
