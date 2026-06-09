@@ -1,41 +1,20 @@
-# DanmakuHime
+# PreprintDanmaku 预印本弹幕机
 
-Bilibili live-stream danmaku backend with swappable browser frontends.
+用于OBS的哔哩哔哩直播弹幕机。
 
-The backend connects to one Bilibili live room, converts live events into the SSE contract in `SCHEMA.md`, and serves the selected frontend from `frontends/<name>/`. The included `preprint` frontend renders the stream as an arXiv-style preprint.
+前后端分离架构，后端基于[`bilibili-api`](https://github.com/Nemo2011/bilibili-api)。
 
-## Run
+开发中。LLM友好，可阅读`CLAUDE.md`获取关于本仓库的更多信息。
 
-```bash
-python3 build_backend.py
-python3 frontends/build_frontend.py preprint
-python3 main.py
-```
+## 前端
 
-After startup, scan the Bilibili login QR code in the terminal and open:
+目前自带两个前端，都在 `frontends/` 下：
 
-```text
-http://127.0.0.1:19216/
-```
+- **`preprint`** —— arXiv 预印本论文风格的弹幕机。
+- **`example`** —— 一个极简前端样例。
 
-## Configuration
+### FAQ
 
-Backend runtime settings live in `config.toml`: room id, host/port, selected frontend, credential/log/output files, reconnect timing, SSE buffering, and event value conversion.
+##### 为何重复造轮子？
 
-Frontend-specific interpretation lives inside each frontend folder. For the bundled preprint frontend, edit `frontends/preprint/config.json` for the masthead title, stamp, category, and authors. This file is packaged with the frontend zip but is intentionally excluded from frontend payload hashing, so local user edits do not break startup integrity checks.
-
-## Packaging
-
-- Edit backend code: run `python3 build_backend.py`.
-- Edit frontend payload or metadata: run `python3 frontends/build_frontend.py preprint`.
-- `APP_VERSION` is the backend version.
-- `API_VERSION` is the front/back event contract version; backend and frontend API versions must match exactly.
-
-## Event Mapping
-
-- `DANMU_MSG` -> `danmaku`
-- `SEND_GIFT` -> `gift`
-- `SUPER_CHAT_MESSAGE` -> `superchat`
-- `GUARD_BUY` -> `guard`
-
-The backend `init` event carries only neutral live-room facts in `room_info`. Frontends decide how to interpret or display those facts.
+想自己做前端，但是Laplace Chat的文档看不懂。遂前后端都自己造。
