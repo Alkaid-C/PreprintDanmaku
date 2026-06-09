@@ -1,0 +1,33 @@
+<!-- DanmakuHime-Frontend
+     name: Minimal
+     version: 0.1.0
+     codename:
+     release_date: Jun 8, 2026
+     api_version: 0.3
+-->
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DanmakuHime Minimal Frontend</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>DanmakuHime Minimal Frontend</h1>
+        <p class="muted">Readable SSE feed for danmaku, gift, superchat, and guard events.</p>
+      </div>
+      <div id="status" class="status">connecting</div>
+    </header>
+
+    <section>
+      <h2>Events</h2>
+      <div id="events" class="empty">Waiting for events from /stream.</div>
+    </section>
+  </main>
+</body>
+</html>

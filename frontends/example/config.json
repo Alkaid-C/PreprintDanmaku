@@ -1,0 +1,20 @@
+{
+  "title": "DanmakuHime Minimal Frontend",
+  "maxEvents": 200,
+  "fontSize": {
+    "title": "22px",
+    "meta": "14px",
+    "content": "16px",
+    "caption": "13px"
+  },
+  "colors": {
+    "text": "#f5f7fb",
+    "muted": "#a9bad1",
+    "background": "rgba(8, 12, 20, 0.82)",
+    "card": "rgba(18, 26, 39, 0.86)",
+    "danmaku": "#2f855a",
+    "gift": "#b7791f",
+    "superchat": "#bf3f5c",
+    "guard": "#6b5bd6"
+  }
+}
