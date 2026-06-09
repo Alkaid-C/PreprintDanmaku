@@ -1,5 +1,5 @@
 *.txt
+!mock_record.txt
 *.zip
 credential.json
 __pycache__
-
