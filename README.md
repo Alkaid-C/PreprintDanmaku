@@ -27,6 +27,8 @@
 
 复制[`frontends/CLAUDE.md`](frontends/CLAUDE.md)和[`SCHEMA.md`](SCHEMA.md)给豆包，然后说：“豆包豆包，我想要一个这样儿的弹幕机，帮我写一个。”
 
+> 本项目中的[`example`极简样例前端](frontends/example/)就是ChatGPT在阅读了以上两个文档后生成的，运行正常。
+
 ## 许可证
 
 本项目中除 `frontends/preprint/*` 以外的部分以 [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html) 协议开源。
