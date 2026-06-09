@@ -1,6 +1,6 @@
 # frontends/preprint/CLAUDE.md
 
-The bundled example frontend: the live stream rendered as the body of an arXiv-style **preprint** ("VtuRXiv"). This file is what you need to edit *this* frontend safely — the shared frontend rules (serving, `.project`/build, the SSE contract, the OBS runtime) live in `frontends/CLAUDE.md`, and the event field definitions in `SCHEMA.md`. Here we cover only how preprint *interprets and renders* the stream.
+The bundled example frontend: the live stream rendered as the body of an arXiv-style **preprint** ("VtuRXiv"). This file is what you need to edit *this* frontend safely — the shared frontend rules (serving, `.project`/build, the SSE contract, the OBS runtime) live in `frontends/CLAUDE.md`, and the event field definitions in `docs/SCHEMA.md`. Here we cover only how preprint *interprets and renders* the stream.
 
 ## What it is
 
@@ -34,7 +34,7 @@ Two mechanisms, deliberately separate:
 
 - **Dedupe & init.** `adapt` drops duplicates by `type:id` and treats `init` specially (updates the masthead via `applyInit`, renders nothing). Every other event must keep a stable `id` — it's the React key and the dedupe key.
 - **Citation vs preprint id.** A danmaku **with** a fan badge renders as a journal citation (`badgename` as journal, `badgelevel` as `Vol.`); **without** one it gets a synthetic id `VtuRXiv:2606.xxxx` derived from the event `id` (`preprintId`). Both paths must stay — they're the two `DmCite` branches.
-- **Unit conversions.** Superchat `value` is in **cents** → divide by 100 for the `¥` amount. `months` on a guard becomes the "开通了 N 个月的…" line. `dwell_seconds` → ms as above. These match `SCHEMA.md`; if a field's meaning seems off, check there first.
+- **Unit conversions.** Superchat `value` is in **cents** → divide by 100 for the `¥` amount. `months` on a guard becomes the "开通了 N 个月的…" line. `dwell_seconds` → ms as above. These match `docs/SCHEMA.md`; if a field's meaning seems off, check there first.
 - **Env counters.** `Remark/Observation/Lemma/Theorem/Axiom` are numbered by a running counter (`state.env`), and References lines by `state.ln`. They're monotonic per session, not per zone.
 
 ## Masthead & config.json

@@ -126,8 +126,8 @@ def build_zip(frontend_dir: Path, payload: set[Path]) -> tuple[Path, int]:
     manifest, optional config.json, AND a copy of this shared builder dropped in
     as <dir>/build_frontend.py — so the zip stays a self-contained, rebuildable
     drop-in even though the repo keeps a single shared builder. Unzip into the
-    backend's frontends/ and point config.toml at frontends/<dir>. Run after the
-    manifest is written.
+    repo/bundle root's frontends/ and point backend/config.toml at
+    ../frontends/<dir>. Run after the manifest is written.
     """
     dirname = frontend_dir.name
     stem = f"DanmakuHime-frontend-{dirname}-" + datetime.now().strftime("%Y-%m-%d-%H-%M")

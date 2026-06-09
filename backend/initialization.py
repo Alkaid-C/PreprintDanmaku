@@ -61,8 +61,9 @@ class AppConfig:
     # Web server
     host: str
     port: int
-    # Frontend package directory (holds index.html + frontend.json); resolved
-    # relative to BASE_DIR. The backend serves and integrity-checks this folder.
+    # Frontend package directory (holds index.html + frontend.json); a sibling of
+    # the backend/ folder (../frontends/<name>). The backend serves and
+    # integrity-checks this folder.
     frontend: Path
 
     # Login (QR login is handled by bilibili_api.login_v2; we only poll it)
@@ -138,7 +139,8 @@ class ConfigLoader:
         "superchat_dwell_multiplier",
     )
     # Path keys: stored as bare names / relative paths in the TOML, resolved relative
-    # to BASE_DIR. `frontend` is a directory (frontends/<name>); the rest are files.
+    # to BASE_DIR. `frontend` is a directory one level up (../frontends/<name>, a
+    # sibling of this backend/ folder); the rest are files written inside backend/.
     _TOML_PATH_FIELDS = (
         "frontend",
         "event_log_file", "stats_output_file", "qr_image_file", "credential_file", "log_file",
@@ -174,6 +176,9 @@ class ConfigLoader:
             guard = {int(k): int(v) for k, v in guard_raw.items()}
             kwargs: Dict[str, Any] = {key: require(key) for key in cls._TOML_SCALAR_FIELDS}
             kwargs.update({key: BASE_DIR / require(key) for key in cls._TOML_PATH_FIELDS})
+            # `frontend` lives one level up (../frontends/<name>, a sibling of this
+            # backend/ folder); collapse the `..` so the served/logged path is clean.
+            kwargs["frontend"] = kwargs["frontend"].resolve()
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise ConfigError(f"配置文件 {path.name} 的某个值格式不对：{exc}") from exc
 
@@ -219,10 +224,10 @@ class VersionGuard:
         """Fail fast unless the given app_version / release_date / api_version and the
         sha256 of every INTEGRITY_FILES entry match what build_backend.py recorded in
         backend.json. Catches editing a backend module (or bumping a constant)
-        without re-running `python3 build_backend.py`. The constants are passed in by
-        main.py, where they are defined.
+        without re-running `python3 backend/build_backend.py`. The constants are
+        passed in by main.py, where they are defined.
         """
-        manifest = cls._load_manifest(BACKEND_MANIFEST, "python3 build_backend.py")
+        manifest = cls._load_manifest(BACKEND_MANIFEST, "python3 backend/build_backend.py")
         for label, expected in (
             ("app_version", app_version),
             ("release_date", release_date),
@@ -231,7 +236,8 @@ class VersionGuard:
             if manifest.get(label) != expected:
                 raise VersionMismatchError(
                     f"{label} 不匹配：main.py 为 {expected!r}，"
-                    f"{BACKEND_MANIFEST.name} 为 {manifest.get(label)!r}。请运行 `python3 build_backend.py`。"
+                    f"{BACKEND_MANIFEST.name} 为 {manifest.get(label)!r}。"
+                    "请运行 `python3 backend/build_backend.py`。"
                 )
         cls._verify_hashes(manifest.get("hashes"), BASE_DIR, INTEGRITY_FILES, BACKEND_MANIFEST.name)
 

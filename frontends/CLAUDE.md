@@ -1,6 +1,6 @@
 # frontends/CLAUDE.md
 
-Guidance for building a **frontend** for DanmakuHime. A frontend is a self-contained folder under `frontends/`, shipped as its own package and combined with any backend at runtime via `config.toml`'s `frontend` key. Its only binding to the backend is the SSE contract, so you develop against **`SCHEMA.md`** (the authoritative event-shape contract) — not against backend code. Everything you need to build a frontend is in this file plus `SCHEMA.md`; the bundled example is documented in `frontends/preprint/CLAUDE.md`.
+Guidance for building a **frontend** for DanmakuHime. A frontend is a self-contained folder under `frontends/`, shipped as its own package and combined with any backend at runtime via `config.toml`'s `frontend` key. Its only binding to the backend is the SSE contract, so you develop against **`docs/SCHEMA.md`** (the authoritative event-shape contract) — not against backend code. Everything you need to build a frontend is in this file plus `docs/SCHEMA.md`; the bundled example is documented in `frontends/preprint/CLAUDE.md`.
 
 ## The contract with the backend
 
@@ -8,7 +8,7 @@ These are hard requirements — break one and the backend won't serve your front
 
 **Entry & serving.** `index.html` is the mandatory entry file, served at `/`. The backend mounts the **entire folder** at the web root (`static_folder=<your dir>, static_url_path=""`), so every relative reference in `index.html` (`vendor/…`, `fonts/…`, `*.jsx`, `config.json`) resolves unchanged. `.jsx` responses are re-tagged `text/babel` by extension, so in-browser Babel transpilation works. Nothing is special-cased by filename except `index.html`.
 
-**Data.** Connect `EventSource('/stream')`. **`SCHEMA.md` is authoritative** for event shapes: a single `init` event carrying neutral `room_info`, then a stream of `danmaku` / `gift` / `superchat` / `guard`. The `id` field is monotonically increasing — use it to sort, dedupe (e.g. by `type:id`), and reconcile the bounded history the backend replays to every new subscriber on connect. There is **no offline/mock mode**: the page only runs when served by the backend, so develop with the backend running.
+**Data.** Connect `EventSource('/stream')`. **`docs/SCHEMA.md` is authoritative** for event shapes: a single `init` event carrying neutral `room_info`, then a stream of `danmaku` / `gift` / `superchat` / `guard`. The `id` field is monotonically increasing — use it to sort, dedupe (e.g. by `type:id`), and reconcile the bounded history the backend replays to every new subscriber on connect. There is **no offline/mock mode**: the page only runs when served by the backend, so develop with the backend running.
 
 **Identity & version match.** The comment block at the top of `index.html` is a hand-authored truth source carrying `name` / `version` / `codename` / `release_date` / `api_version`:
 

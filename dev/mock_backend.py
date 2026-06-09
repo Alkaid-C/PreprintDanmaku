@@ -5,7 +5,7 @@ DanmakuHime mock backend for frontend development.
 This server does not read config.toml, connect to Bilibili, log in, or run the
 package integrity guards. It serves one frontend directory and replays
 mock_record.txt through the existing Bilibili event adapter so the browser still
-receives the normal SCHEMA.md SSE events.
+receives the normal docs/SCHEMA.md SSE events.
 """
 
 from __future__ import annotations
@@ -21,16 +21,25 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
+# mock_backend lives in dev/, a sibling of backend/. Put backend/ on the import
+# path so the backend modules below import flat, exactly as they do in-package.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
+
 from bilibili import BilibiliEventAdapter
-from initialization import BASE_DIR
 from server import EventHub, create_flask_app
 from stats import StatsTracker
 from util import hhmm, parse_int
 
+# This dev tool's own files (the replay record + its throwaway sinks) live next to
+# it in dev/. Frontend paths are resolved from the repo root so CLI arguments match
+# the normal tree layout, e.g. `frontends/preprint`.
+DEV_DIR = Path(__file__).resolve().parent
+REPO_ROOT = DEV_DIR.parent
+
 HOST = "0.0.0.0"
 PORT = 19216
 DEFAULT_FRONTEND_DIR = "frontends/preprint"
-RECORD_FILE = BASE_DIR / "mock_record.txt"
+RECORD_FILE = DEV_DIR / "mock_record.txt"
 PLAYBACK_INTERVAL_SECONDS = 2.0
 PLAYBACK_LOOP_PAUSE_SECONDS = 30.0
 ROOM_ID_FALLBACK = 1921712061
@@ -63,7 +72,7 @@ def parse_args() -> argparse.Namespace:
 def resolve_frontend_dir(raw: str) -> Path:
     path = Path(raw)
     if not path.is_absolute():
-        path = BASE_DIR / path
+        path = REPO_ROOT / path
     path = path.resolve()
     if not (path / "index.html").is_file():
         raise SystemExit(f"前端目录无效：{path}（缺少 index.html）")
@@ -108,8 +117,8 @@ def build_mock_config(room_id: int) -> SimpleNamespace:
         host=HOST,
         port=PORT,
         sse_heartbeat_seconds=20,
-        event_log_file=BASE_DIR / "mock_event_log.txt",
-        stats_output_file=BASE_DIR / "mock_stats.txt",
+        event_log_file=DEV_DIR / "mock_event_log.txt",
+        stats_output_file=DEV_DIR / "mock_stats.txt",
         stream_end_report_dwell_seconds=20,
         debug_forward_errors=False,
         debug_error_dwell_seconds=30,

@@ -8,7 +8,7 @@ components together (EventHub, adapter, credentials, stats), and runs the
 lifecycle — start the server, publish init, log in, connect to the live room and
 reconnect forever.
 
-    edit any backend .py  ->  python3 build_backend.py  ->  python3 main.py
+    edit any backend .py  ->  python3 backend/build_backend.py  ->  python3 run.py
 """
 
 from __future__ import annotations
@@ -44,12 +44,12 @@ from util import exception_summary, hhmm
 APP_VERSION = "0.5.0"
 APP_CODENAME = "Out-of-the-loop Performance"
 RELEASE_DATE = "Jun 8, 2026"
-# Front/back contract version — the SCHEMA.md event-shape version, independent of
+# Front/back contract version — the docs/SCHEMA.md event-shape version, independent of
 # APP_VERSION and of any frontend's own version. The backend refuses to serve a
 # frontend whose manifest api_version does not equal this exactly (see
 # VersionGuard.check_frontend), so a backend package and a frontend package ship
 # separately and combine iff their api_version strings match. Bump this whenever
-# the event contract in SCHEMA.md changes in a way the frontend must track.
+# the event contract in docs/SCHEMA.md changes in a way the frontend must track.
 API_VERSION = "0.3"
 # Codenames are display-only: they ride along in the manifests and are printed at
 # startup, but DO NOT participate in any version/integrity check (a codename never
