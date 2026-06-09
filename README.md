@@ -23,9 +23,9 @@
 
 复制[`CLAUDE.md`](CLAUDE.md)给豆包，然后问：“豆包豆包，如何运行？”
 
-##### 我想要一个这样儿的弹幕机
+##### 我想要一个长这样儿的弹幕机可以吗？
 
-复制[`frontends/CLAUDE.md`](frontends/CLAUDE.md)和[`SCHEMA.md`](SCHEMA.md)给豆包，然后说：“豆包豆包，我想要一个这样儿的弹幕机，帮我写一个。”
+复制[`frontends/CLAUDE.md`](frontends/CLAUDE.md)和[`SCHEMA.md`](SCHEMA.md)给豆包，然后说：“豆包豆包，我想要一个长这样儿的弹幕机，帮我写一个。”
 
 > 本项目中的[`example`极简样例前端](frontends/example/)就是ChatGPT在阅读了以上两个文档后生成的，运行正常。
 
