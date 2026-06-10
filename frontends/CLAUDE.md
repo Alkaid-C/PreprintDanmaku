@@ -26,11 +26,11 @@ These are hard requirements — break one and the backend won't serve your front
 
 ## Build & integrity
 
-A frontend has two hand-authored truth sources — the `index.html` comment block above and **`.project`** — and one generated manifest, **`frontend.json`**.
+A frontend has two hand-authored truth sources — the `index.html` comment block above and **`.project`** — and one generated manifest, **`frontend_version.json`**.
 
-`.project` is a gitignore-style allowlist (one pattern per line, `#` comments and blanks ignored) declaring which files ship. Each line maps to **one** sha256 group in `frontend.json`'s `payload`, so you choose the granularity: give a file its own line for a per-file hash (precise failure reporting), or use a glob like `fonts/**` to seal a whole tree under one hash. `.project` **must** cover `index.html`, and a pattern matching nothing is a build error.
+`.project` is a gitignore-style allowlist (one pattern per line, `#` comments and blanks ignored) declaring which files ship. Each line maps to **one** sha256 group in `frontend_version.json`'s `payload`, so you choose the granularity: give a file its own line for a per-file hash (precise failure reporting), or use a glob like `fonts/**` to seal a whole tree under one hash. `.project` **must** cover `index.html`, and a pattern matching nothing is a build error.
 
-`frontend.json` is **fully generated — never hand-edit it.** After changing any payload file, `.project`, or the `index.html` comment block, rebuild:
+`frontend_version.json` is **fully generated — never hand-edit it.** After changing any payload file, `.project`, or the `index.html` comment block, rebuild:
 
 ```bash
 python3 frontends/build_frontend.py <name>   # or --all for every frontend

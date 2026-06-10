@@ -6,8 +6,8 @@ Everything that has to be right *before* anything is served, in one place:
   - the path constants the backend resolves against,
   - AppConfig, the typed runtime-config container, and ConfigLoader, its only
     legitimate producer (reads config.toml, fails fast on any missing key),
-  - VersionGuard, the two startup self-checks (backend ↔ backend.json, and the
-    selected frontend folder ↔ its frontend.json).
+  - VersionGuard, the two startup self-checks (backend ↔ backend_version.json,
+    and the selected frontend folder ↔ its frontend_version.json).
 
 The version/codename strings themselves live in main.py (the package's identity)
 and are passed *into* VersionGuard as arguments — this module sits below main.py
@@ -27,13 +27,14 @@ import pathspec
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_FILE = BASE_DIR / "config.toml"
-BACKEND_MANIFEST = BASE_DIR / "backend.json"
+BACKEND_MANIFEST = BASE_DIR / "backend_version.json"
+FRONTEND_MANIFEST_NAME = "frontend_version.json"
 
-# The backend source files whose integrity is bound to backend.json (see
+# The backend source files whose integrity is bound to backend_version.json (see
 # build_backend.py). Resolved against BASE_DIR. MUST match build_backend.py's
 # INTEGRITY_FILES exactly. Frontend files are not here — they live under
-# frontends/<name>/ and are bound to that frontend's own frontend.json instead
-# (see VersionGuard.check_frontend).
+# frontends/<name>/ and are bound to that frontend's own frontend_version.json
+# instead (see VersionGuard.check_frontend).
 INTEGRITY_FILES = (
     "util.py",
     "schema.py",
@@ -62,9 +63,9 @@ class AppConfig:
     # Web server
     host: str
     port: int
-    # Frontend package directory (holds index.html + frontend.json); a sibling of
-    # the backend/ folder (../frontends/<name>). The backend serves and
-    # integrity-checks this folder.
+    # Frontend package directory (holds index.html + frontend_version.json); a
+    # sibling of the backend/ folder (../frontends/<name>). The backend serves
+    # and integrity-checks this folder.
     frontend: Path
 
     # Login (QR login is handled by bilibili_api.login_v2; we only poll it)
@@ -104,11 +105,10 @@ class ConfigError(Exception):
 
 
 class VersionMismatchError(Exception):
-    """A manifest (backend.json or a frontend's frontend.json) is missing or
-    unreadable, a version/api string disagrees, or a file hash does not match —
-    i.e. a source file changed (or a version constant was bumped) without
-    re-running the matching build script, or a mismatched front/back pair was
-    combined."""
+    """A manifest (backend_version.json or a frontend's frontend_version.json) is
+    missing or unreadable, a version/api string disagrees, or a file hash does not
+    match — i.e. a source file changed (or a version constant was bumped) without
+    re-running the matching build script, or a mismatched front/back pair was combined."""
 
 
 class ConfigLoader:
@@ -175,18 +175,14 @@ class ConfigLoader:
 
 class VersionGuard:
     """Startup staleness / consistency guards (not tamper-proofing) for the two
-    independently-shipped packages: the backend (its .py modules ↔ backend.json, via
-    check_version) and the selected frontend folder (index.html + payload ↔
-    frontends/<name>/frontend.json, via check_frontend). Each catches editing a file
-    or bumping a version without re-running the matching build script, or combining
-    a mismatched front/back pair. Both entry points raise VersionMismatchError on any
-    miss, which main() turns into a clean SystemExit.
+    independently-shipped packages: the backend (.py modules ↔ backend_version.json,
+    via check_version) and the selected frontend folder (↔ frontend_version.json,
+    via check_frontend). Each catches editing a file or bumping a version without
+    re-running the matching build script, or combining a mismatched front/back pair;
+    both raise VersionMismatchError, which main() turns into a clean SystemExit.
 
-    The version/codename strings live in main.py and are passed into these methods
-    as arguments, so this module never imports main.py back.
-
-    The json manifests are themselves unprotected, so this is a guard, not a lock.
-    All hashing here MUST stay byte-identical to the build scripts (raw bytes via
+    The manifests are themselves unprotected, so this is a guard, not a lock. All
+    hashing here MUST stay byte-identical to the build scripts (raw bytes via
     read_bytes(), no text decode / newline normalization): _file_sha256 mirrors
     build_backend.py, and _frontend_candidates + _frontend_group_hash mirror
     build_frontend.py's NON_PAYLOAD filter + pathspec matching + group digest.
@@ -200,15 +196,21 @@ class VersionGuard:
     # package metadata/tooling and user-editable frontend-local configuration.
     # Skipped from the candidate set so a greedy pattern can't pull them in — MUST
     # match build_frontend.py's NON_PAYLOAD exactly.
-    _FRONTEND_NON_PAYLOAD = frozenset({"frontend.json", "build_frontend.py", ".project", "config.json"})
+    _FRONTEND_NON_PAYLOAD = frozenset({
+        FRONTEND_MANIFEST_NAME,
+        "frontend.json",
+        "build_frontend.py",
+        ".project",
+        "config.json",
+    })
 
-    # ---- backend self-check (backend modules ↔ backend.json) ---------------
+    # ---- backend self-check (backend modules ↔ backend_version.json) --------
 
     @classmethod
     def check_version(cls, app_version: str, release_date: str, api_version: str) -> None:
         """Fail fast unless the given app_version / release_date / api_version and the
         sha256 of every INTEGRITY_FILES entry match what build_backend.py recorded in
-        backend.json. Catches editing a backend module (or bumping a constant)
+        backend_version.json. Catches editing a backend module (or bumping a constant)
         without re-running `python3 backend/build_backend.py`. The constants are
         passed in by main.py, where they are defined.
         """
@@ -226,14 +228,14 @@ class VersionGuard:
                 )
         cls._verify_hashes(manifest.get("hashes"), BASE_DIR, INTEGRITY_FILES, BACKEND_MANIFEST.name)
 
-    # ---- frontend check (frontends/<name>/ ↔ frontend.json) ----------------
+    # ---- frontend check (frontends/<name>/ ↔ frontend_version.json) ---------
 
     @classmethod
     def check_frontend(cls, config: AppConfig, api_version: str) -> Dict[str, Any]:
-        """Fail fast unless the selected frontend folder carries a frontend.json whose
-        api_version equals the backend's api_version (passed in by main.py) and whose
-        every `payload` group (one hash per `.project` pattern) re-derives to the same
-        digest on disk. Returns the manifest (for startup logging).
+        """Fail fast unless the selected frontend folder carries a frontend_version.json
+        whose api_version equals the backend's api_version (passed in by main.py) and
+        whose every `payload` group (one hash per `.project` pattern) re-derives to
+        the same digest on disk. Returns the manifest (for startup logging).
 
         This is what makes the front/back split work: any frontend package with a
         matching api_version drops in, but a stale or mismatched one is rejected
@@ -241,13 +243,14 @@ class VersionGuard:
         so per-file granularity is the author's choice of how finely `.project` slices.
         """
         frontend_dir = config.frontend
-        label = f"{frontend_dir.name}/frontend.json"
+        label = f"{frontend_dir.name}/{FRONTEND_MANIFEST_NAME}"
         if not (frontend_dir / "index.html").is_file():
             raise VersionMismatchError(
                 f"前端目录 {frontend_dir} 缺少 index.html（config.toml 的 frontend 指向是否正确？）。"
             )
         manifest = cls._load_manifest(
-            frontend_dir / "frontend.json", f"python3 frontends/build_frontend.py {frontend_dir.name}"
+            frontend_dir / FRONTEND_MANIFEST_NAME,
+            f"python3 frontends/build_frontend.py {frontend_dir.name}",
         )
 
         api = manifest.get("api_version")
@@ -321,8 +324,8 @@ class VersionGuard:
 
     @staticmethod
     def _file_sha256(path: Path) -> str:
-        """sha256 of a file's raw bytes, hex-encoded. Must stay byte-identical to the
-        build scripts' hashing (raw bytes, no text decode / newline normalization)."""
+        """sha256 of a file's raw bytes, hex-encoded — no text decode / newline
+        normalization (byte-identical to the build scripts; see class docstring)."""
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
     # ---- frontend hashing (one digest per `.project` group, mirrors build_frontend.py) ---

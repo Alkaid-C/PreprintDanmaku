@@ -14,8 +14,8 @@ A **backend** and a **swappable frontend**, two independently-shipped packages b
 
 Three deliberately separate version axes:
 - **`APP_VERSION`** / `RELEASE_DATE` — the backend's own version (constants in `main.py`).
-- the **frontend version** / name / release date — per frontend, in its `index.html` comment block → `frontend.json`.
-- **`API_VERSION`** — the front/back **contract** version (the `docs/SCHEMA.md` event-shape version), independent of the other two. `main.py` declares one; each `frontend.json` declares the one it needs. They must be **exactly equal** or the backend refuses to serve that frontend — this is what lets any backend package combine with any frontend package iff their `API_VERSION` matches. (The contract version is *not* bound to `docs/SCHEMA.md` itself; that doc doesn't ship — `main.py`'s `API_VERSION` and the frontend's `index.html` comment are the truth sources.)
+- the **frontend version** / name / release date — per frontend, in its `index.html` comment block → `frontend_version.json`.
+- **`API_VERSION`** — the front/back **contract** version (the `docs/SCHEMA.md` event-shape version), independent of the other two. `main.py` declares one; each `frontend_version.json` declares the one it needs. They must be **exactly equal** or the backend refuses to serve that frontend — this is what lets any backend package combine with any frontend package iff their `API_VERSION` matches. (The contract version is *not* bound to `docs/SCHEMA.md` itself; that doc doesn't ship — `main.py`'s `API_VERSION` and the frontend's `index.html` comment are the truth sources.)
 
 Each axis also has an optional **codename** (`APP_CODENAME` / `API_CODENAME` in `main.py`; a frontend `codename` in its `index.html`). Codenames ride along in the manifests and print at startup but are **display-only — never validated**; only version strings are matched.
 
@@ -30,7 +30,7 @@ This top-level file is the cross-cutting overview: the contract, the version axe
 ```
 run.py            launcher — `python3 run.py` (puts backend/ on sys.path, then calls backend/main.py:main)
 build.py          bundle assembler — folds the backend + chosen frontend(s) into one runnable zip → dist/
-backend/          the backend package: the 8 modules + build_backend.py + backend.json + config.toml
+backend/          the backend package: the 8 modules + build_backend.py + backend_version.json + config.toml
 frontends/<name>/ each swappable frontend package (built by frontends/build_frontend.py)
 dev/              dev-only tooling, NOT shipped: mock_backend.py + its mock_record.txt replay
 docs/             SCHEMA.md, RAW_DATA.md — reference docs, not shipped
@@ -41,16 +41,16 @@ The backend reaches the frontend through exactly one resolved path: `config.toml
 
 ## Build & Verification
 
-There is no test suite or linter. There **is** a per-package build step that is also a startup staleness/integrity guard — **after editing backend or frontend code you must rebuild, or the backend refuses to start:**
+There is no linter or full automated test suite. There is a lightweight dev test suite: `dev/mock_backend.py` replays `dev/mock_record.txt` over SSE for frontend development, and the backend parser should successfully parse every real captured event in that sample. There is also a per-package build step that is a startup staleness/integrity guard — **after editing backend or frontend code you must rebuild, or the backend refuses to start:**
 
 ```bash
-python3 backend/build_backend.py               # after editing any backend .py — regenerates backend.json (+ backend-only zip → dist/)
+python3 backend/build_backend.py               # after editing any backend .py — regenerates backend_version.json (+ backend-only zip → dist/)
 python3 frontends/build_frontend.py preprint   # after editing a frontend file or its .project (--all does every frontend)
 python3 run.py                                  # then run
 python3 build.py preprint                       # (optional) fold backend + frontend(s) into one runnable bundle → dist/
 ```
 
-Each package builds itself and carries its own manifest + startup guard: the **backend** via `backend/build_backend.py` → `backend.json` ↔ `VersionGuard.check_version()` (mechanics in `backend/CLAUDE.md`); each **frontend** via `frontends/build_frontend.py` → `frontend.json` ↔ `VersionGuard.check_frontend()` (mechanics in `frontends/CLAUDE.md`). The root **`build.py`** is the **assembler** — it refreshes `backend.json`, then folds the backend package plus one or more *already-built* frontends into a single `dist/` bundle laid out like the repo (`run.py` + `backend/…` + `frontends/<name>/…`); folding does not re-hash a frontend, it just copies the already-built files in. It is the only place that knows about combining the two packages.
+Each package builds itself and carries its own manifest + startup guard: the **backend** via `backend/build_backend.py` → `backend_version.json` ↔ `VersionGuard.check_version()` (mechanics in `backend/CLAUDE.md`); each **frontend** via `frontends/build_frontend.py` → `frontend_version.json` ↔ `VersionGuard.check_frontend()` (mechanics in `frontends/CLAUDE.md`). The root **`build.py`** is the **assembler** — it refreshes `backend_version.json`, then folds the backend package plus one or more *already-built* frontends into a single `dist/` bundle laid out like the repo (`run.py` + `backend/…` + `frontends/<name>/…`); folding does not re-hash a frontend, it just copies the already-built files in. It is the only place that knows about combining the two packages.
 
 These are **guards, not tamper-proofing** (the json manifests are themselves unprotected): they catch editing a file, bumping a version, or pairing mismatched packages without rebuilding. Because the two packages ship separately, the hashing logic is **duplicated** across each package's builder and `initialization.py`'s `VersionGuard`, and MUST stay byte-identical — `sha256` over raw bytes (`read_bytes()`), no text decode or newline normalization. Keep the copies in sync: `file_sha256` + `INTEGRITY_FILES` in `backend/build_backend.py` ↔ `initialization.py`; and `_frontend_candidates` + `_frontend_group_hash` in `initialization.py` ↔ `build_frontend.py`'s NON_PAYLOAD filter + `pathspec` matching + group digest.
 
@@ -63,4 +63,4 @@ Install dependencies with `python3 -m pip install -r requirements.txt` (lower-bo
 - **`frontends/CLAUDE.md`** — frontend-author guide: folder layout, `index.html` + `.project` truth sources, the target OBS runtime.
 - **`docs/SCHEMA.md`** — the authoritative front/back SSE field contract (see Architecture). The source of truth for event shapes and `API_VERSION`.
 - **`docs/RAW_DATA.md`** — reference for Bilibili's raw event formats (UserInfo, envelope, per-`cmd` payloads). The `§` citations in `bilibili.py`'s parse comments point here.
-- **`dev/mock_record.txt`** — a small captured sample (one event per line, a Python `repr` restored with `ast.literal_eval`) that `dev/mock_backend.py` replays over SSE for frontend development. The realistic input to test parsing against; not shipped (`mock_backend.py` lives in `dev/`).
+- **`dev/mock_record.txt`** — a small real captured event sample (one event per line, a Python `repr` restored with `ast.literal_eval`) that `dev/mock_backend.py` replays over SSE for frontend development. It is also the realistic backend parser sample: all events in this file should parse successfully. Not shipped (`mock_backend.py` lives in `dev/`).

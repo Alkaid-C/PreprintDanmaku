@@ -26,11 +26,7 @@ log = logging.getLogger("danmakuhime")
 
 
 class CredentialManager:
-    """Owns the whole Bilibili credential lifecycle behind one public entry point.
-
-    Merges QR-code login (delegated to bilibili_api.login_v2.QrCodeLogin), JSON
-    persistence with a freshness stamp, and the freshness policy that decides
-    load / refresh / re-login. The single public method is obtain_credential().
+    """The one public entry point is obtain_credential().
 
     Freshness policy, keyed on the age of `obtained_at`:
       < load_max_age      -> load and use as-is
@@ -75,7 +71,7 @@ class CredentialManager:
     # ---- freshness policy --------------------------------------------------
 
     def _resolve_credential(self) -> Optional[Credential]:
-        """One pass of the freshness policy: load < 24h, refresh < 7d, else re-login."""
+        """One pass of the freshness policy (see class docstring)."""
         if not self._path.exists():
             log.debug("未找到凭据文件，开始扫码登录。")
             return self._login_and_store()

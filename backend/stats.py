@@ -42,9 +42,9 @@ class StatsTracker:
             log.warning("统计跳过：未知类目 %r（username=%r, value=%s）", category, username, value)
             return
         with self._lock:
-            item = self._stats.setdefault(uid, self._new_record(username))
-            item["username"] = username
-            item[category] += value
+            record = self._stats.setdefault(uid, self._new_record(username))
+            record["username"] = username
+            record[category] += value
 
     @staticmethod
     def _new_record(username: str) -> Dict[str, Any]:

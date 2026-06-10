@@ -1,0 +1,8 @@
+# DanmakuHime 运行依赖。安装：python3 -m pip install -r requirements.txt
+# 版本号是「已验证可用」的下限；通常照装即可。
+# （注释里是 import 名 -> PyPI 包名的对应关系。）
+
+bilibili-api-python>=17.4.1   # import bilibili_api（含 login_v2）：连直播间、扫码登录、凭证刷新
+Flask>=3.1.2                  # import flask：静态文件 + /stream SSE + /health
+Flask-Cors>=6.0.1             # import flask_cors：跨域
+pathspec>=0.12.1             # import pathspec：解析前端 .project 白名单（app.py 与 build_frontend.py 共用）

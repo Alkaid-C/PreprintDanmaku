@@ -1,0 +1,17 @@
+{
+  "app_version": "0.5.1",
+  "app_codename": "それは内緒",
+  "release_date": "Jun 10, 2026",
+  "api_version": "0.4",
+  "api_codename": "これこそ私なりの愛だ",
+  "hashes": {
+    "util.py": "d39afb51b5e78316b28129ba237914dfb93b12bd18674e8be3f0e57e760051c3",
+    "schema.py": "ec46fc2460b161d152f7ea0821fd79e2017a2c864886c801f30b13cb33b00bfd",
+    "initialization.py": "9e3725d30332928ee1d4bbdc023ef5b7bce9ae485f64db770082ca2ffd16417c",
+    "server.py": "83742cf9d4bd48f77ce9bbc5d0a38a2a718985a3e513a0730a6e69d1f5267658",
+    "credentials.py": "2cdd0290cc2e4e634b415585c36b7269e465403ba77d10d987235663718c289f",
+    "stats.py": "7e34291be1eff0d14f9e5d7de48c3e6465618850b589417b5c1b2288b2cdb172",
+    "bilibili.py": "1462a8eaaed3f263ec6eec6cb6a08917553c13ea43e3c2040020a57502dbd63c",
+    "main.py": "30907580d37dbef8d7ff4462f573f08ad5459bae01afa4e4a8451e43edff1216"
+  }
+}

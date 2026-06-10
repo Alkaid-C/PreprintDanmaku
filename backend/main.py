@@ -43,24 +43,17 @@ from stats import StatsTracker
 from util import exception_summary, hhmm
 
 APP_VERSION = "0.5.1"
-APP_CODENAME = "Out-of-the-loop Performance"
-RELEASE_DATE = "Jun 9, 2026"
-# Front/back contract version — the docs/SCHEMA.md event-shape version, independent of
-# APP_VERSION and of any frontend's own version. The backend refuses to serve a
-# frontend whose manifest api_version does not equal this exactly (see
-# VersionGuard.check_frontend), so a backend package and a frontend package ship
-# separately and combine iff their api_version strings match. Bump this whenever
-# the event contract in docs/SCHEMA.md changes in a way the frontend must track.
+APP_CODENAME = "それは内緒"
+RELEASE_DATE = "Jun 10, 2026"
+# Front/back contract version (docs/SCHEMA.md's event shape), independent of
+# APP_VERSION. The backend refuses to serve a frontend whose api_version differs
+# (VersionGuard.check_frontend); bump it when the event contract changes.
 API_VERSION = "0.4"
-# Codenames are display-only: they ride along in the manifests and are printed at
-# startup, but DO NOT participate in any version/integrity check (a codename never
-# blocks startup or front/back pairing). Version strings are the only thing matched.
-API_CODENAME = "回忆是抓不到的月光"
+# Codenames are display-only — printed at startup, never version-checked.
+API_CODENAME = "これこそ私なりの愛だ"
 
-# Single application logger. All of our own output goes through this; format and
-# handlers (console + file) are configured once in DanmakuHimeApp._setup_logging().
-# Third-party loggers (werkzeug, bilibili_api's LiveDanmaku_*) are tamed there / at
-# use so everything shares one HH:MM:SS LEVEL line format and the same log file.
+# Single application logger; format and handlers (console + file) are set up once in
+# _setup_logging(), where werkzeug and bilibili_api's loggers are tamed to share them.
 log = logging.getLogger("danmakuhime")
 
 
@@ -110,13 +103,13 @@ class DanmakuHimeApp:
     def _log_startup(self) -> None:
         log.info("后端版本：%s（%s）", APP_VERSION, APP_CODENAME)
         log.info("API 版本：%s（%s）", API_VERSION, API_CODENAME)
-        m = self.frontend_manifest
-        codename = m.get("codename") or ""
+        manifest = self.frontend_manifest
+        codename = manifest.get("codename") or ""
         log.info(
             "前端版本：%s %s%s [%s，API %s]",
-            m.get("name"), m.get("version"),
+            manifest.get("name"), manifest.get("version"),
             f"（{codename}）" if codename else "",
-            self.frontend_dir.name, m.get("api_version"),
+            self.frontend_dir.name, manifest.get("api_version"),
         )
         log.info("前端地址：http://%s:%s/", self.config.host, self.config.port)
         log.info("目标直播间：%s", self.config.room_id)
@@ -184,17 +177,10 @@ class DanmakuHimeApp:
         self.hub.publish(system_message(text, self.config.reconnect_notice_dwell_seconds))
 
     def _setup_logging(self) -> None:
-        """Configure the one log format for the whole process: HH:MM:SS LEVEL message.
-
-        Our own logger, werkzeug and bilibili_api's loggers all funnel through the
-        same console + file handlers on the root logger, so the terminal stays in a
-        single format and everything is mirrored to `log_file` for later review.
-
-        The console handler is INFO+; the file handler is DEBUG+, so `log.debug`
-        diagnostics (credential freshness, masthead echo) stay out of the terminal
-        but are still recorded to `log_file` for after-the-fact review. Only our own
-        `log` is raised to DEBUG — third-party loggers keep inheriting INFO from root,
-        so this doesn't unleash library debug chatter into the file.
+        """Set up the one process-wide log format (HH:MM:SS LEVEL message) on the root
+        logger's console + file handlers, so our logger and the tamed third-party ones
+        share it. Console is INFO+; the file is DEBUG+. Only our own `log` is raised to
+        DEBUG, so its diagnostics reach the file without unleashing library chatter.
         """
         logging.addLevelName(logging.WARNING, "WARN")
         logging.addLevelName(logging.CRITICAL, "CRIT")
@@ -224,12 +210,10 @@ class DanmakuHimeApp:
 
     @staticmethod
     def _tame_lib_logger(lib_logger: logging.Logger, level: int = logging.WARNING) -> None:
-        """Route a third-party logger through our handlers instead of its own.
-
-        bilibili_api attaches its own bracket-format StreamHandler to each
-        LiveDanmaku_* logger. Drop those handlers and let records propagate to the
-        root logger so they share our format and file; raise the level so only real
-        problems (connect failures, retries) surface rather than its connect chatter.
+        """Route a third-party logger through our root handlers instead of its own:
+        bilibili_api attaches a bracket-format StreamHandler to each LiveDanmaku_*
+        logger. Drop those, propagate to root for our format/file, and raise the level
+        so only real problems surface rather than connect chatter.
         """
         lib_logger.handlers.clear()
         lib_logger.propagate = True

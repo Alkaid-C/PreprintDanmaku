@@ -27,7 +27,7 @@ room_id = 1921712061
 host = "127.0.0.1"
 # 网页端口，浏览器打开 http://127.0.0.1:端口/
 port = 19216
-# 使用哪一套前端（指向 frontends 下的目录，里面要有 index.html 和 frontend.json）
+# 使用哪一套前端（指向 frontends 下的目录，里面要有 index.html 和 frontend_version.json）
 # 后端代码在 backend/ 里，前端目录是它「上一层的 frontends/」，所以前缀是 ../
 # 换前端只改最后那个目录名；前端与后端的 API 版本必须一致，否则启动会被拒绝
 frontend = "../frontends/preprint"

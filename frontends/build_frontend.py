@@ -8,7 +8,7 @@ the command line (or every one with --all):
     python3 frontends/build_frontend.py preprint
     python3 frontends/build_frontend.py --all
 
-For the chosen frontend it writes <dir>/frontend.json, carrying the
+For the chosen frontend it writes <dir>/frontend_version.json, carrying the
 name / version / release_date / api_version read out of the comment block at the
 top of <dir>/index.html, plus one sha256 per line of <dir>/.project.
 
@@ -45,18 +45,26 @@ import pathspec
 
 FRONTENDS_ROOT = Path(__file__).resolve().parent   # the frontends/ directory
 SELF_PATH = Path(__file__).resolve()
+FRONTEND_MANIFEST_NAME = "frontend_version.json"
 
 # Metadata keys read out of index.html's comment block, in manifest order.
 # `codename` is optional and may be empty (display-only, never validated); the
-# rest are required. Order here is the order they appear in frontend.json.
+# rest are required. Order here is the order they appear in frontend_version.json.
 META_KEYS = ("name", "version", "codename", "release_date", "api_version")
 OPTIONAL_META = frozenset({"codename"})
 
 # Names that may live in a frontend folder but are never part of the hashed
-# payload: package metadata/tooling and user-editable frontend-local config.
+# payload: package metadata/tooling, legacy manifest output, and user-editable
+# frontend-local config.
 # Skipped from the candidate set on BOTH sides so a greedy pattern can't pull
 # them in — MUST match initialization.py exactly.
-NON_PAYLOAD = frozenset({"frontend.json", "build_frontend.py", ".project", "config.json"})
+NON_PAYLOAD = frozenset({
+    FRONTEND_MANIFEST_NAME,
+    "frontend.json",
+    "build_frontend.py",
+    ".project",
+    "config.json",
+})
 
 
 def read_meta(source: str, key: str) -> str:
@@ -70,18 +78,21 @@ def read_meta(source: str, key: str) -> str:
     if match is None:
         if optional:
             return ""
-        raise SystemExit(f"在 index.html 的注释块中找不到 {key} 字段。")
+        raise SystemExit(f"Missing {key} field in the index.html comment block.")
     return match.group(1)
 
 
 def read_patterns(project_file: Path) -> list[str]:
     """The `.project` allowlist, one pattern per line (blanks / # comments dropped)."""
     if not project_file.is_file():
-        raise SystemExit(f"缺少 {project_file.name}（前端文件白名单，每行一个 gitignore 风格 pattern）。")
+        raise SystemExit(
+            f"Missing {project_file.name} "
+            "(frontend file allowlist, one gitignore-style pattern per line)."
+        )
     lines = project_file.read_text(encoding="utf-8").splitlines()
     patterns = [s for line in lines if (s := line.strip()) and not s.startswith("#")]
     if not patterns:
-        raise SystemExit(f"{project_file.name} 里没有任何 pattern。")
+        raise SystemExit(f"{project_file.name} has no patterns.")
     return patterns
 
 
@@ -139,7 +150,7 @@ def build_zip(frontend_dir: Path, payload: set[Path]) -> tuple[Path, int]:
             path
             for path in (
                 frontend_dir / ".project",
-                frontend_dir / "frontend.json",
+                frontend_dir / FRONTEND_MANIFEST_NAME,
                 frontend_dir / "config.json",
             )
             if path.is_file()
@@ -154,10 +165,10 @@ def build_zip(frontend_dir: Path, payload: set[Path]) -> tuple[Path, int]:
 
 
 def build_one(frontend_dir: Path) -> None:
-    """Generate frontend.json + a package zip for a single frontend folder."""
+    """Generate frontend_version.json + a package zip for a single frontend folder."""
     entry = frontend_dir / "index.html"
     if not entry.is_file():
-        raise SystemExit(f"{frontend_dir} 缺少 index.html（前端必须有入口文件 index.html）。")
+        raise SystemExit(f"{frontend_dir} is missing index.html (required frontend entrypoint).")
 
     meta = {key: read_meta(entry.read_text(encoding="utf-8"), key) for key in META_KEYS}
 
@@ -169,28 +180,34 @@ def build_one(frontend_dir: Path) -> None:
     for pattern in patterns:
         files = match_pattern(frontend_dir, pattern, candidates)
         if not files:
-            raise SystemExit(f"{frontend_dir.name}/.project 中的 pattern {pattern!r} 没有匹配到任何文件。")
+            raise SystemExit(
+                f"{frontend_dir.name}/.project pattern {pattern!r} matched no files."
+            )
         payload[pattern] = group_hash(frontend_dir, files)
         matched_files.update(files)
 
     if entry not in matched_files:
-        raise SystemExit(f"{frontend_dir.name}/.project 必须覆盖 index.html（它要被 serve 也要被校验）。")
+        raise SystemExit(
+            f"{frontend_dir.name}/.project must include index.html "
+            "(it is served and integrity-checked)."
+        )
 
     manifest = {**meta, "payload": payload}
-    (frontend_dir / "frontend.json").write_text(
+    manifest_path = frontend_dir / FRONTEND_MANIFEST_NAME
+    manifest_path.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
 
-    print(f"[{frontend_dir.name}] 已写入 frontend.json")
+    print(f"[{frontend_dir.name}] Wrote {FRONTEND_MANIFEST_NAME}")
     for key in META_KEYS:
         print(f"  {key:<13} {meta[key]}")
-    print(f"  payload       {len(payload)} 组 / {len(matched_files)} 个文件")
+    print(f"  payload       {len(payload)} groups / {len(matched_files)} files")
     for pattern, digest in payload.items():
-        print(f"    {pattern:<14} {digest[:12]}…")
+        print(f"    {pattern:<14} {digest[:12]}...")
 
     zip_path, count = build_zip(frontend_dir, matched_files)
-    print(f"  已打包 {zip_path.name}（{count} 个文件）")
+    print(f"  Packaged {zip_path.name} ({count} files)")
 
 
 def discover_frontends() -> list[Path]:
@@ -199,20 +216,26 @@ def discover_frontends() -> list[Path]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="构建 frontends/ 下某个前端的 frontend.json + 发布包。")
+    parser = argparse.ArgumentParser(
+        description="Build frontend_version.json and a package zip for one frontend."
+    )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("name", nargs="?", help="要构建的前端子目录名（如 preprint）")
-    group.add_argument("--all", action="store_true", help="构建 frontends/ 下所有含 index.html 的目录")
+    group.add_argument("name", nargs="?", help="Frontend subdirectory name, e.g. preprint")
+    group.add_argument(
+        "--all",
+        action="store_true",
+        help="Build every frontends/ subdirectory that contains index.html",
+    )
     args = parser.parse_args()
 
     if args.all:
         targets = discover_frontends()
         if not targets:
-            raise SystemExit("frontends/ 下没有找到任何含 index.html 的前端目录。")
+            raise SystemExit("No frontend directories with index.html were found under frontends/.")
     else:
         target = FRONTENDS_ROOT / args.name
         if not target.is_dir():
-            raise SystemExit(f"找不到前端目录 frontends/{args.name}。")
+            raise SystemExit(f"Frontend directory frontends/{args.name} was not found.")
         targets = [target]
 
     for frontend_dir in targets:

@@ -1,11 +1,11 @@
 {
   "name": "Preprint",
   "version": "0.1.4",
-  "codename": "",
+  "codename": "本当になること",
   "release_date": "Jun 10, 2026",
   "api_version": "0.4",
   "payload": {
-    "index.html": "8ee5b2753ed39a5274056f4635fc4a8284b872c1b59c443b39d43d2bfce6b8df",
+    "index.html": "011712e9276930f14be81785a68d51c3a7a5e81c9723736b0f54d51976e8ff62",
     "*.jsx": "c19f08383671cc0204091729a8ac3c30bd02ccad9fb9161991679d35f344912b",
     "vendor/**": "25aaa74c61fa820a08a003bd3154a3ca3b0f7259bb1e2ad343da601e87da39e5",
     "fonts/**": "8a5eb92f199d744b9e9a0bfe8f1ddb26dfe5f24cc56df44c562f7a01cf2f2ab6"

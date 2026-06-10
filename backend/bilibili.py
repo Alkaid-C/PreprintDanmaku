@@ -90,35 +90,35 @@ class BilibiliEventAdapter:
 
     async def handle_event(self, event: Dict[str, Any]) -> None:
         self._log_event(event)
-        event_type = event.get("type", "")
+        cmd = event.get("type", "")  # Bilibili's raw event cmd (DANMU_MSG, ...), not our schema.EventType
 
-        if event_type == _CMD_PREPARING:
+        if cmd == _CMD_PREPARING:
             report = self.stats.save(self.config.stats_output_file)
             self.hub.publish(system_message(report, self.config.stream_end_report_dwell_seconds))
             return
 
         anomalies = _Anomalies()
         try:
-            converted = self._convert(event_type, event, anomalies)
+            converted = self._convert(cmd, event, anomalies)
         except Exception as exc:
-            log.error("处理 %s 失败：%s", event_type, exc, exc_info=True)
+            log.error("处理 %s 失败：%s", cmd, exc, exc_info=True)
             if self.config.debug_forward_errors:
-                self._publish_debug_error(event_type, exc)
+                self._publish_debug_error(cmd, exc)
             return
 
         # Honest accounting: when a field was missing/unparseable and we substituted
         # a placeholder, say so once with the full raw event attached.
         if anomalies:
             log.warning("解析 %s 命中兜底：%s；原始数据：%r",
-                        event_type or "UNKNOWN", "；".join(anomalies.notes), event)
+                        cmd or "UNKNOWN", "；".join(anomalies.notes), event)
 
         if converted:
             self.hub.publish(converted)
 
-    def _publish_debug_error(self, event_type: str, exc: Exception) -> None:
+    def _publish_debug_error(self, cmd: str, exc: Exception) -> None:
         self.hub.publish(
             system_message(
-                f"后端处理 {event_type or 'UNKNOWN'} 失败：{type(exc).__name__}: {exc}",
+                f"后端处理 {cmd or 'UNKNOWN'} 失败：{type(exc).__name__}: {exc}",
                 self.config.debug_error_dwell_seconds,
             )
         )
@@ -129,20 +129,20 @@ class BilibiliEventAdapter:
                 file.write(repr(event))
                 file.write("\n")
 
-    def _convert(self, event_type: str, event: Dict[str, Any], anomalies: "_Anomalies") -> Optional[Dict[str, Any]]:
-        if event_type == _CMD_DANMU_MSG:
+    def _convert(self, cmd: str, event: Dict[str, Any], anomalies: "_Anomalies") -> Optional[Dict[str, Any]]:
+        if cmd == _CMD_DANMU_MSG:
             return self._danmaku(event, anomalies)
-        if event_type == _CMD_SEND_GIFT:
+        if cmd == _CMD_SEND_GIFT:
             return self._gift(event, anomalies)
-        if event_type == _CMD_SUPER_CHAT_MESSAGE:
+        if cmd == _CMD_SUPER_CHAT_MESSAGE:
             return self._superchat(event, anomalies)
-        if event_type == _CMD_GUARD_BUY:
+        if cmd == _CMD_GUARD_BUY:
             return self._guard(event, anomalies)
         return None
 
     def _danmaku(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
         info = event["data"]["info"]
-        sender = self._build_sender(self._danmaku_uinfo(info, anomalies), anomalies)
+        sender_dict = self._build_sender(self._danmaku_uinfo(info, anomalies), anomalies)
         text = str(info[1])
 
         # Emoticon danmaku: info[0][13] is a dict carrying the image url and info[1]
@@ -155,7 +155,7 @@ class BilibiliEventAdapter:
             return {
                 "type": EventType.DANMAKU,
                 "timestamp": hhmm(),
-                "sender": sender,
+                "sender": sender_dict,
                 "text": text,
                 "is_image": True,
                 "image_url": str(url or ""),
@@ -167,7 +167,7 @@ class BilibiliEventAdapter:
         return {
             "type": EventType.DANMAKU,
             "timestamp": hhmm(),
-            "sender": sender,
+            "sender": sender_dict,
             "text": text,
             "is_image": False,
         }
@@ -218,7 +218,7 @@ class BilibiliEventAdapter:
 
     def _gift(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
         data = event["data"]["data"]
-        sender = self._build_sender(
+        sender_dict = self._build_sender(
             data.get("sender_uinfo"), anomalies,
             flat_uid=data.get("uid"), flat_username=data.get("uname"),
         )
@@ -232,11 +232,11 @@ class BilibiliEventAdapter:
             gift_name = "礼物"
         gift_name = str(gift_name)
         total_yuan = self._gift_value_yuan(data, gift_name, anomalies)
-        self.stats.add(sender["uid"], sender["username"], "gift", total_yuan)
+        self.stats.add(sender_dict["uid"], sender_dict["username"], "gift", total_yuan)
         return {
             "type": EventType.GIFT,
             "timestamp": hhmm(),
-            "sender": sender,
+            "sender": sender_dict,
             "gift_name": gift_name,
             "gift_count": count,
             "value_cents": int(round(total_yuan * schema.CENTS_PER_YUAN)),
@@ -260,7 +260,7 @@ class BilibiliEventAdapter:
 
     def _superchat(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
         data = event["data"]["data"]
-        sender = self._build_sender(
+        sender_dict = self._build_sender(
             data.get("uinfo"), anomalies,
             flat_uid=data.get("uid"), flat_username=as_dict(data.get("user_info")).get("uname"),
         )
@@ -268,14 +268,14 @@ class BilibiliEventAdapter:
         if price_yuan is None:
             anomalies.note(f"price 缺失/无法解析（{data.get('price')!r}）→0 元")
             price_yuan = 0
-        self.stats.add(sender["uid"], sender["username"], "superchat", price_yuan)
+        self.stats.add(sender_dict["uid"], sender_dict["username"], "superchat", price_yuan)
         message = data.get("message")
         if not message:
             anomalies.note("text 缺失→''")
         return {
             "type": EventType.SUPERCHAT,
             "timestamp": hhmm(),
-            "sender": sender,
+            "sender": sender_dict,
             "dwell_seconds": self._superchat_dwell_seconds(data.get("time"), anomalies),
             "value_cents": price_yuan * schema.CENTS_PER_YUAN,
             "text": str(message or ""),
@@ -312,7 +312,7 @@ class BilibiliEventAdapter:
         # so it is not warned about.
         # TODO: if avatar/medal are wanted, look them up later by uid via the user
         # profile API.
-        sender = schema.sender(
+        sender_dict = schema.sender(
             uid=uid,
             username=username,
             avatar_url="",
@@ -328,7 +328,7 @@ class BilibiliEventAdapter:
         return {
             "type": EventType.GUARD,
             "timestamp": hhmm(),
-            "sender": sender,
+            "sender": sender_dict,
             "guard_level": guard_level,
             "months": months,
         }
