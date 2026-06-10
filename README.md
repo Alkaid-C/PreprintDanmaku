@@ -25,11 +25,15 @@ LLM友好，阅读`CLAUDE.md`获取关于本仓库的更多介绍。
 
 复制[`CLAUDE.md`](CLAUDE.md)给豆包，然后问：“豆包豆包，如何运行？”
 
-##### 我想要一个长这样儿的弹幕机可以吗？
+##### 我想要一个长xx样儿的弹幕机可以吗？
 
-复制[`frontends/CLAUDE.md`](frontends/CLAUDE.md)和[`docs/SCHEMA.md`](docs/SCHEMA.md)给豆包，然后说：“豆包豆包，我想要一个长这样儿的弹幕机，帮我写一个。”
+复制[`frontends/CLAUDE.md`](frontends/CLAUDE.md)和[`docs/SCHEMA.md`](docs/SCHEMA.md)给豆包，然后说：“豆包豆包，我想要一个长xx样儿的弹幕机，帮我写一个。”
 
 > 本项目中的[`example`极简样例前端](frontends/example/)就是codex在阅读了以上两个文档后生成的，运行正常。
+
+##### 我还想知道xx？
+
+复制[`CLAUDE.md`](CLAUDE.md)和[`README.md`](README.md)给豆包，然后问：“豆包豆包，我想知道xx，你还需要哪些文档吗？”
 
 ## 许可证
 
