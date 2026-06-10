@@ -24,7 +24,8 @@ const PREPRINT = 'VtuRXiv';
 const RANK_MARK = ['', '†', '‡', '§'];                 // none / 舰长 / 提督 / 总督
 const GUARD_NAME = ['', '舰长', '提督', '总督'];
 const GUARD_ENV = ['', 'Lemma', 'Theorem', 'Axiom'];     // guard level 1/2/3
-const SUPER_ENV = ['', 'Remark', 'Observation'];          // superchat level 1/2
+const SUPER_ENV = ['', 'Remark', 'Observation'];          // superchat tier 1/2 (split by amount)
+const SUPER_TIER2_YUAN = 30;       // SC ≥ ¥30 → Observation (tier 2); below → Remark
 
 // masthead meta — filled by this frontend's config.json plus backend `init.room_info`
 const DM_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -49,6 +50,7 @@ function useDanmakuStream() {
   const c = React.useRef({ ln: 0, env: 0, id: 0 });
   const expire = React.useRef({});
   const seen = React.useRef({});
+  const guardDwellMs = React.useRef({}); // pinned dwell by guard rank, from config.json
 
   const applyPreprintConfig = React.useCallback((config) => {
     const c = config || {};
@@ -57,6 +59,12 @@ function useDanmakuStream() {
     if (c.preprint_id) DM_META.preprintId = c.preprint_id;
     if (c.category) DM_META.category = c.category;
     if (Array.isArray(c.authors) && c.authors.length) DM_META.authors = c.authors;
+    const gd = c.guard_dwell_seconds || {};
+    guardDwellMs.current = {
+      1: Number(gd['舰长']) * 1000,
+      2: Number(gd['提督']) * 1000,
+      3: Number(gd['总督']) * 1000,
+    };
     setMetaVersion((v) => v + 1);
   }, []);
 
@@ -69,7 +77,7 @@ function useDanmakuStream() {
       const area = [roomInfo.parent_area_name, roomInfo.area_name].filter(Boolean).join('.');
       if (area) DM_META.category = area;
     }
-    if (!DM_META.anchor && roomInfo.streamer_uname) DM_META.anchor = roomInfo.streamer_uname;
+    if (!DM_META.anchor && roomInfo.streamer_username) DM_META.anchor = roomInfo.streamer_username;
     setMetaVersion((v) => v + 1);
   }, []);
 
@@ -80,12 +88,12 @@ function useDanmakuStream() {
 
   const senderOf = React.useCallback((sender) => {
     const s = sender || {};
-    const rank = Math.max(0, Math.min(3, Number(s.guardstat) || 0));
-    const badge = s.badgename || '';
+    const rank = Math.max(0, Math.min(3, Number(s.guard_level) || 0));
+    const badge = s.badge_name || '';
     return {
       user: s.username || '匿名用户',
       rank,
-      fan: badge ? { name: badge, level: Number(s.badgelevel) || 0 } : null,
+      fan: badge ? { name: badge, level: Number(s.badge_level) || 0 } : null,
     };
   }, []);
 
@@ -121,32 +129,33 @@ function useDanmakuStream() {
     if (ev.type === 'gift') {
       return {
         id, type: 'gift', user: sender.user, time, rank: sender.rank,
-        gift: ev.giftname || '礼物',
-        qty: Math.max(1, Number(ev.giftcount) || 1),
-        value: Number(ev.gifttotalvalue) || 0,
+        gift: ev.gift_name || '礼物',
+        qty: Math.max(1, Number(ev.gift_count) || 1),
+        value: Number(ev.value_cents) || 0,
       };
     }
 
     if (ev.type === 'superchat') {
+      const amount = Math.round((Number(ev.value_cents) || 0) / 100);
       return {
         id, type: 'super', user: sender.user, time, rank: sender.rank,
         num: ++state.env,
-        level: Number(ev.level) === 2 ? 2 : 1,
+        level: amount >= SUPER_TIER2_YUAN ? 2 : 1,
         text: ev.text || '',
-        amount: Math.round((Number(ev.value) || 0) / 100),
+        amount,
         dwell: Math.max(1000, (Number(ev.dwell_seconds) || 12) * 1000),
       };
     }
 
     if (ev.type === 'guard') {
-      const rank = Math.max(1, Math.min(3, Number(ev.level) || 1));
+      const rank = Math.max(1, Math.min(3, Number(ev.guard_level) || 1));
       const months = Math.max(1, Math.round(Number(ev.months) || 1));
       return {
         id, type: 'guard', user: sender.user, time,
         num: ++state.env,
         rank,
         text: '开通了' + months + '个月的' + GUARD_NAME[rank],
-        dwell: Math.max(1000, (Number(ev.dwell_seconds) || 12) * 1000),
+        dwell: Math.max(1000, guardDwellMs.current[rank] || 0),
       };
     }
 

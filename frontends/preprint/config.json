@@ -3,6 +3,11 @@
   "preprint_id": "1921712061",
   "category": "虚拟.日常",
   "title": "灰域梦游的现象学考察",
+  "guard_dwell_seconds": {
+    "舰长": 60,
+    "提督": 300,
+    "总督": 3600
+  },
   "authors": [
     {
       "name": "埃瑟斯Asuse",
