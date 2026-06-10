@@ -124,10 +124,10 @@
   }
 
   function identity(sender) {
-    const badge = sender.badgename
-      ? `${esc(sender.badgename)} lv. ${esc(sender.badgelevel)}`
+    const badge = sender.badge_name
+      ? `${esc(sender.badge_name)} lv. ${esc(sender.badge_level)}`
       : "无牌";
-    return `${esc(sender.username)} (${esc(sender.uid)}) - ${badge} - ${guardName(sender.guardstat)}`;
+    return `${esc(sender.username)} (${esc(sender.uid)}) - ${badge} - ${guardName(sender.guard_level)}`;
   }
 
   function meta(event) {
@@ -157,14 +157,14 @@
     }
 
     if (event.type === "gift") {
-      return `<div class="content gift">${esc(event.giftname)} x ${esc(event.giftcount)} - ${money(event.gifttotalvalue)}</div>`;
+      return `<div class="content gift">${esc(event.gift_name)} x ${esc(event.gift_count)} - ${money(event.value_cents)}</div>`;
     }
 
     if (event.type === "superchat") {
-      return `<div class="content superchat">SC lv. ${esc(event.level)} - ${money(event.value)} - ${esc(event.dwell_seconds)}s - ${esc(event.text)}</div>`;
+      return `<div class="content superchat">SC - ${money(event.value_cents)} - ${esc(event.dwell_seconds)}s - ${esc(event.text)}</div>`;
     }
 
-    return `<div class="content guard">${guardName(event.level)} - ${esc(event.months)}个月 - ${esc(event.dwell_seconds)}s</div>`;
+    return `<div class="content guard">${guardName(event.guard_level)} - ${esc(event.months)}个月</div>`;
   }
 
   function render() {

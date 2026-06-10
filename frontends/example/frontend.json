@@ -1,12 +1,12 @@
 {
   "name": "Minimal",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "codename": "",
-  "release_date": "Jun 8, 2026",
-  "api_version": "0.3",
+  "release_date": "Jun 10, 2026",
+  "api_version": "0.4",
   "payload": {
-    "index.html": "b8c367c7d7e0041e7d5f804807e1ea249f920719836fdd2c87c6503473a82093",
+    "index.html": "6d87a9585f130697a1d1fe8f2d9af843e322840c7502a8e31465bfba0213afd3",
     "style.css": "e63bf10f0e3ff08aaa304c7f239665c4fd51d3c5309043ce37cd398c8c8e79b8",
-    "app.js": "a2118ef613268529eb996d2d275d59507eba3f7b88e28985c2db79acf1ef4377"
+    "app.js": "adbac4685f4f886ae52a307b33aba0328fb74572ece0da87abb33a6d9e180792"
   }
 }
