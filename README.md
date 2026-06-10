@@ -4,7 +4,9 @@
 
 前后端分离架构，后端基于[`bilibili-api`](https://github.com/Nemo2011/bilibili-api)。
 
-开发中。LLM友好，可阅读`CLAUDE.md`获取关于本仓库的更多信息。
+开发中，目前暂时仅支持普通弹幕/SuperChat/礼物/上舰互动，暂不支持进入直播间/点赞/关注等。
+
+LLM友好，阅读`CLAUDE.md`获取关于本仓库的更多介绍。
 
 ## 前端
 
@@ -27,7 +29,7 @@
 
 复制[`frontends/CLAUDE.md`](frontends/CLAUDE.md)和[`docs/SCHEMA.md`](docs/SCHEMA.md)给豆包，然后说：“豆包豆包，我想要一个长这样儿的弹幕机，帮我写一个。”
 
-> 本项目中的[`example`极简样例前端](frontends/example/)就是ChatGPT在阅读了以上两个文档后生成的，运行正常。
+> 本项目中的[`example`极简样例前端](frontends/example/)就是codex在阅读了以上两个文档后生成的，运行正常。
 
 ## 许可证
 
