@@ -20,7 +20,7 @@ Three deliberately separate version axes:
 Each axis also has an optional **codename** (`APP_CODENAME` / `API_CODENAME` in `main.py`; a frontend `codename` in its `index.html`). Codenames ride along in the manifests and print at startup but are **display-only — never validated**; only version strings are matched.
 
 Internals live one level down, loaded when you work in that package:
-- **`backend/CLAUDE.md`** — the seven modules, `config.toml` / `AppConfig`, and the backend build/integrity mechanics.
+- **`backend/CLAUDE.md`** — the eight modules, `config.toml` / `AppConfig`, and the backend build/integrity mechanics.
 - **`frontends/CLAUDE.md`** — the per-frontend folder layout, the `index.html` + `.project` truth sources, local `vendor/`/`fonts/`, and the preprint rendering model.
 
 This top-level file is the cross-cutting overview: the contract, the version axes, the repo layout, and how the pieces build and combine.
@@ -30,7 +30,7 @@ This top-level file is the cross-cutting overview: the contract, the version axe
 ```
 run.py            launcher — `python3 run.py` (puts backend/ on sys.path, then calls backend/main.py:main)
 build.py          bundle assembler — folds the backend + chosen frontend(s) into one runnable zip → dist/
-backend/          the backend package: the 7 modules + build_backend.py + backend.json + config.toml
+backend/          the backend package: the 8 modules + build_backend.py + backend.json + config.toml
 frontends/<name>/ each swappable frontend package (built by frontends/build_frontend.py)
 dev/              dev-only tooling, NOT shipped: mock_backend.py + its mock_record.txt replay
 docs/             SCHEMA.md, RAW_DATA.md — reference docs, not shipped
@@ -59,7 +59,7 @@ Install dependencies with `python3 -m pip install -r requirements.txt` (lower-bo
 ## Documents
 
 - **`README.md`** (root) — the user-facing readme: run, configure, package.
-- **`backend/CLAUDE.md`** — backend internals: the seven modules, `config.toml` / `AppConfig`, the backend build/integrity mechanics.
+- **`backend/CLAUDE.md`** — backend internals: the eight modules, `config.toml` / `AppConfig`, the backend build/integrity mechanics.
 - **`frontends/CLAUDE.md`** — frontend-author guide: folder layout, `index.html` + `.project` truth sources, the target OBS runtime.
 - **`docs/SCHEMA.md`** — the authoritative front/back SSE field contract (see Architecture). The source of truth for event shapes and `API_VERSION`.
 - **`docs/RAW_DATA.md`** — reference for Bilibili's raw event formats (UserInfo, envelope, per-`cmd` payloads). The `§` citations in `bilibili.py`'s parse comments point here.

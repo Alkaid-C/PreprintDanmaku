@@ -14,7 +14,19 @@ import threading
 from pathlib import Path
 from typing import Any, Dict
 
+from schema import GUARD_TIERS
+
 log = logging.getLogger("danmakuhime")
+
+# The accounting categories, as (key, report title). Money categories accumulate
+# yuan (float, shown in 元); guard categories accumulate months (int, shown in 月)
+# and are keyed by the tier's Chinese name, derived from schema.GUARD_TIERS so there
+# is no second list of tier names to keep in sync. `add()` accepts exactly these
+# keys.
+_MONEY_SECTIONS = (("gift", "礼物"), ("superchat", "SuperChat"))
+_GUARD_SECTIONS = tuple((tier.name, tier.name) for tier in GUARD_TIERS)
+_MONEY_KEYS = frozenset(key for key, _ in _MONEY_SECTIONS)
+_GUARD_KEYS = frozenset(key for key, _ in _GUARD_SECTIONS)
 
 
 class StatsTracker:
@@ -26,26 +38,32 @@ class StatsTracker:
         if not uid:
             log.warning("统计跳过：缺少 uid（username=%r, category=%s, value=%s）", username, category, value)
             return
+        if category not in _MONEY_KEYS and category not in _GUARD_KEYS:
+            log.warning("统计跳过：未知类目 %r（username=%r, value=%s）", category, username, value)
+            return
         with self._lock:
-            item = self._stats.setdefault(
-                uid,
-                {"username": username, "gift": 0.0, "superchat": 0.0, "captain": 0, "admiral": 0, "governor": 0},
-            )
+            item = self._stats.setdefault(uid, self._new_record(username))
             item["username"] = username
             item[category] += value
+
+    @staticmethod
+    def _new_record(username: str) -> Dict[str, Any]:
+        record: Dict[str, Any] = {"username": username}
+        for key in _MONEY_KEYS:
+            record[key] = 0.0
+        for key in _GUARD_KEYS:
+            record[key] = 0
+        return record
 
     def report(self) -> str:
         with self._lock:
             if not self._stats:
                 return "没有消费记录"
             lines = ["用户消费统计", "=" * 40]
-            sections = [
-                ("gift", "礼物", "元"),
-                ("superchat", "SuperChat", "元"),
-                ("captain", "舰长", "月"),
-                ("admiral", "提督", "月"),
-                ("governor", "总督", "月"),
-            ]
+            sections = (
+                [(key, title, "元") for key, title in _MONEY_SECTIONS]
+                + [(key, title, "月") for key, title in _GUARD_SECTIONS]
+            )
             for key, title, unit in sections:
                 rows = [(v["username"], v[key]) for v in self._stats.values() if v[key]]
                 if not rows:

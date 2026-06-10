@@ -1,16 +1,17 @@
 {
-  "app_version": "0.5.0",
+  "app_version": "0.5.1",
   "app_codename": "Out-of-the-loop Performance",
-  "release_date": "Jun 8, 2026",
-  "api_version": "0.3",
+  "release_date": "Jun 9, 2026",
+  "api_version": "0.4",
   "api_codename": "回忆是抓不到的月光",
   "hashes": {
     "util.py": "d39afb51b5e78316b28129ba237914dfb93b12bd18674e8be3f0e57e760051c3",
-    "initialization.py": "b398f9158bbe5c2cf7b24d424e69967cf137b8091447022e3d26b3f9c1bf75c4",
+    "schema.py": "ec46fc2460b161d152f7ea0821fd79e2017a2c864886c801f30b13cb33b00bfd",
+    "initialization.py": "58433036340c1f588abbce98f517e08f4af0f8d9adbeaa35213574d8a0fe7b8c",
     "server.py": "83742cf9d4bd48f77ce9bbc5d0a38a2a718985a3e513a0730a6e69d1f5267658",
     "credentials.py": "e9d97524f8e442b7c96b1d182257c389c0962e9de11cabf7fa2ed82a86698d1e",
-    "stats.py": "54ac92d590dd5a39ba178a2c4dd7490a8c2232141493020a8cde9bbd66dcb42f",
-    "bilibili.py": "4d7bd1af62df797cf0ce99314e06ac258510050b7099c6e9d80b62a2c8d7a4c3",
-    "main.py": "ee61e1de63607e1719dabf88e92819fb64958294a3b9b64e34eb1e23d9bf2cc2"
+    "stats.py": "d8c35fa0b88f24f6efd922f04562f1a7836bccffea9b4b79adad9b36553f8805",
+    "bilibili.py": "50d4257a333df81ef0621373e79b4a52f5efae2300f211641ec751c0d69cdbf1",
+    "main.py": "b4bebeef688fa08d7e71ededc23ad730b3d9fae80b41c81703a477e9cfe6d1c5"
   }
 }

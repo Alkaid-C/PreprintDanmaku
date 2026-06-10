@@ -3,7 +3,8 @@
 DanmakuHime — the Bilibili integration boundary.
 
 The only place that knows Bilibili's raw formats. Two kinds of translation live
-here, both turning fragile Bilibili payloads into our clean schema:
+here, both turning fragile Bilibili payloads into the clean schema (see schema.py /
+docs/SCHEMA.md):
   - live events: BilibiliEventAdapter maps DANMU_MSG / SEND_GIFT /
     SUPER_CHAT_MESSAGE / GUARD_BUY into typed events and publishes them.
   - room info: fetch_room_info() calls the room API (with retries) and
@@ -24,30 +25,39 @@ from typing import Any, Dict, List, Optional
 
 from bilibili_api import live, sync
 
+import schema
 from initialization import AppConfig
+from schema import EventType
 from server import EventHub
 from stats import StatsTracker
 from util import as_dict, exception_summary, hhmm, parse_float, parse_int
 
 log = logging.getLogger("danmakuhime")
 
-SYSTEM_SENDER_ID = "0"
-SYSTEM_SENDER_NAME = "DanmakuHime"
+# Bilibili's raw event `cmd` values we translate (the input vocabulary; not our
+# schema's `type` — that's schema.EventType).
+_CMD_DANMU_MSG = "DANMU_MSG"
+_CMD_SEND_GIFT = "SEND_GIFT"
+_CMD_SUPER_CHAT_MESSAGE = "SUPER_CHAT_MESSAGE"
+_CMD_GUARD_BUY = "GUARD_BUY"
+_CMD_PREPARING = "PREPARING"
 
-
-def _system_sender() -> Dict[str, Any]:
-    return {"uid": SYSTEM_SENDER_ID, "username": SYSTEM_SENDER_NAME, "avatar_url": "", "badgename": "", "badgelevel": 0, "guardstat": 0}
+# A gift's `total_coin` is denominated in milli-yuan (毫元); divide by this to get
+# yuan (RAW_DATA §5.2/§5.3).
+MILLIYUAN_PER_YUAN = 1000
 
 
 def system_message(text: str, dwell_seconds: int) -> Dict[str, Any]:
-    """A pinned-zone superchat published by the backend itself (reports, notices, errors)."""
+    """A pinned-zone superchat published by the backend itself (reports, notices,
+    errors). It is the one place a dwell is backend-chosen rather than from Bilibili
+    (the notice's own display duration); value is 0 and the sender is the reserved
+    system sender."""
     return {
-        "type": "superchat",
+        "type": EventType.SUPERCHAT,
         "timestamp": hhmm(),
-        "sender": _system_sender(),
-        "level": 1,
+        "sender": schema.system_sender(),
         "dwell_seconds": dwell_seconds,
-        "value": 0,
+        "value_cents": 0,
         "text": text,
     }
 
@@ -82,7 +92,7 @@ class BilibiliEventAdapter:
         self._log_event(event)
         event_type = event.get("type", "")
 
-        if event_type == "PREPARING":
+        if event_type == _CMD_PREPARING:
             report = self.stats.save(self.config.stats_output_file)
             self.hub.publish(system_message(report, self.config.stream_end_report_dwell_seconds))
             return
@@ -120,13 +130,13 @@ class BilibiliEventAdapter:
                 file.write("\n")
 
     def _convert(self, event_type: str, event: Dict[str, Any], anomalies: "_Anomalies") -> Optional[Dict[str, Any]]:
-        if event_type == "DANMU_MSG":
+        if event_type == _CMD_DANMU_MSG:
             return self._danmaku(event, anomalies)
-        if event_type == "SEND_GIFT":
+        if event_type == _CMD_SEND_GIFT:
             return self._gift(event, anomalies)
-        if event_type == "SUPER_CHAT_MESSAGE":
+        if event_type == _CMD_SUPER_CHAT_MESSAGE:
             return self._superchat(event, anomalies)
-        if event_type == "GUARD_BUY":
+        if event_type == _CMD_GUARD_BUY:
             return self._guard(event, anomalies)
         return None
 
@@ -143,7 +153,7 @@ class BilibiliEventAdapter:
             if not url:
                 anomalies.note("image_url 缺失→''")
             return {
-                "type": "danmaku",
+                "type": EventType.DANMAKU,
                 "timestamp": hhmm(),
                 "sender": sender,
                 "text": text,
@@ -155,7 +165,7 @@ class BilibiliEventAdapter:
         if reply_uname:
             text = f"@{reply_uname}: {text}"
         return {
-            "type": "danmaku",
+            "type": EventType.DANMAKU,
             "timestamp": hhmm(),
             "sender": sender,
             "text": text,
@@ -207,31 +217,29 @@ class BilibiliEventAdapter:
             return {}
 
     def _gift(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
-        data = as_dict(as_dict(event.get("data")).get("data"))
-        if not data:
-            raise ValueError("SEND_GIFT missing data.data")
+        data = event["data"]["data"]
         sender = self._build_sender(
             data.get("sender_uinfo"), anomalies,
             flat_uid=data.get("uid"), flat_username=data.get("uname"),
         )
         count = parse_int(data.get("num"))
         if count is None or count < 1:
-            anomalies.note(f"giftcount 缺失/无效（{data.get('num')!r}）→1")
+            anomalies.note(f"gift_count 缺失/无效（{data.get('num')!r}）→1")
             count = 1
         gift_name = data.get("giftName") or data.get("gift_name")
         if not gift_name:
-            anomalies.note("giftname 缺失→'礼物'")
+            anomalies.note("gift_name 缺失→'礼物'")
             gift_name = "礼物"
         gift_name = str(gift_name)
         total_yuan = self._gift_value_yuan(data, gift_name, anomalies)
         self.stats.add(sender["uid"], sender["username"], "gift", total_yuan)
         return {
-            "type": "gift",
+            "type": EventType.GIFT,
             "timestamp": hhmm(),
             "sender": sender,
-            "giftname": gift_name,
-            "giftcount": count,
-            "gifttotalvalue": int(round(total_yuan * self.config.cents_per_yuan)),
+            "gift_name": gift_name,
+            "gift_count": count,
+            "value_cents": int(round(total_yuan * schema.CENTS_PER_YUAN)),
         }
 
     def _gift_value_yuan(self, data: Dict[str, Any], gift_name: str, anomalies: "_Anomalies") -> float:
@@ -248,7 +256,7 @@ class BilibiliEventAdapter:
         if total_coin is None:
             anomalies.note(f"total_coin 缺失/无法解析（{data.get('total_coin')!r}）→0 元，gift={gift_name!r}")
             return 0.0
-        return total_coin / self.config.gift_price_to_yuan_divisor
+        return total_coin / MILLIYUAN_PER_YUAN
 
     def _superchat(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
         data = event["data"]["data"]
@@ -265,23 +273,23 @@ class BilibiliEventAdapter:
         if not message:
             anomalies.note("text 缺失→''")
         return {
-            "type": "superchat",
+            "type": EventType.SUPERCHAT,
             "timestamp": hhmm(),
             "sender": sender,
-            "level": 2 if price_yuan >= self.config.superchat_observation_threshold_yuan else 1,
             "dwell_seconds": self._superchat_dwell_seconds(data.get("time"), anomalies),
-            "value": price_yuan * self.config.cents_per_yuan,
+            "value_cents": price_yuan * schema.CENTS_PER_YUAN,
             "text": str(message or ""),
         }
 
-    def _superchat_dwell_seconds(self, raw_time: Any, anomalies: "_Anomalies") -> int:
-        """Bilibili's authoritative dwell `time` (seconds) × the configured
-        multiplier (RAW_DATA §4.3), at least 1 second."""
+    @staticmethod
+    def _superchat_dwell_seconds(raw_time: Any, anomalies: "_Anomalies") -> int:
+        """Bilibili's authoritative SC display duration `time` (seconds), passed
+        through as-is (RAW_DATA §4.3), at least 1 second."""
         seconds = parse_int(raw_time)
         if seconds is None:
             anomalies.note(f"superchat time 缺失/无法解析（{raw_time!r})→0")
             seconds = 0
-        return max(1, int(round(seconds * self.config.superchat_dwell_multiplier)))
+        return max(1, seconds)
 
     def _guard(self, event: Dict[str, Any], anomalies: "_Anomalies") -> Dict[str, Any]:
         data = event["data"]["data"]
@@ -294,34 +302,35 @@ class BilibiliEventAdapter:
             anomalies.note(f"username 缺失→{username!r}")
         username = str(username)
 
-        schema_level = self._guard_schema_level(data, anomalies)
+        guard_level = self._guard_schema_level(data, anomalies)
         months = parse_int(data.get("num"))
         if months is None or months < 1:
             anomalies.note(f"months 缺失/无效（{data.get('num')!r}）→1")
             months = 1
-        # GUARD_BUY 不含 UserInfo，事件本身给不出头像和粉丝牌（RAW_DATA §2.2）。这是
-        # 已知的事件结构限制（非兜底），故不告警。
-        # TODO: 如需头像/粉丝牌，后续用 uid 走用户资料 API 查询补全。
-        sender = {
-            "uid": uid,
-            "username": username,
-            "avatar_url": "",
-            "badgename": "",
-            "badgelevel": 0,
-            "guardstat": schema_level,
-        }
+        # GUARD_BUY carries no UserInfo, so the event itself gives no avatar or fan
+        # medal (RAW_DATA §2.2). This is a known event-shape limit (not a fallback),
+        # so it is not warned about.
+        # TODO: if avatar/medal are wanted, look them up later by uid via the user
+        # profile API.
+        sender = schema.sender(
+            uid=uid,
+            username=username,
+            avatar_url="",
+            badge_name="",
+            badge_level=0,
+            guard_level=guard_level,
+        )
 
-        stat_key = {1: "captain", 2: "admiral", 3: "governor"}.get(schema_level)
-        if stat_key:
-            self.stats.add(uid, username, stat_key, months)
+        tier_name = schema.guard_tier_name(guard_level)
+        if tier_name:
+            self.stats.add(uid, username, tier_name, months)
 
         return {
-            "type": "guard",
+            "type": EventType.GUARD,
             "timestamp": hhmm(),
             "sender": sender,
-            "level": schema_level,
+            "guard_level": guard_level,
             "months": months,
-            "dwell_seconds": self.config.guard_dwell_seconds_by_schema_level[schema_level],
         }
 
     @staticmethod
@@ -329,10 +338,10 @@ class BilibiliEventAdapter:
         """Schema guard level (1/2/3 = 舰长/提督/总督). Prefer raw `guard_level`;
         if it's missing/unrecognized, derive from `gift_name` (舰长/提督/总督)
         rather than blindly guessing; default to 舰长 only if both fail."""
-        schema_level = BilibiliEventAdapter._guard_level_to_schema(data.get("guard_level"))
-        if schema_level:
-            return schema_level
-        by_name = {"舰长": 1, "提督": 2, "总督": 3}.get(str(data.get("gift_name") or ""))
+        guard_level = schema.bili_guard_level_to_schema(data.get("guard_level"))
+        if guard_level:
+            return guard_level
+        by_name = schema.guard_name_to_schema(data.get("gift_name"))
         if by_name:
             anomalies.note(f"guard_level 无效，按 gift_name 推断为 {data.get('gift_name')}")
             return by_name
@@ -360,7 +369,7 @@ class BilibiliEventAdapter:
         Honesty: uid/username/avatar are "必有" per RAW_DATA §2.3, so substituting a
         placeholder for any of them is recorded on `anomalies`. An absent `medal`
         (no fan badge) and a 0 `guard_level` are legitimate states, not fallbacks, so
-        they are silent. guardstat is read from medal.guard_level, never
+        they are silent. guard_level is read from medal.guard_level, never
         user.guard.level (RAW_DATA §2.2 warning).
         """
         uinfo = as_dict(uinfo)
@@ -382,34 +391,23 @@ class BilibiliEventAdapter:
         if not face:
             anomalies.note("avatar_url 缺失→''")
 
-        badgename = str(medal.get("name") or "")  # "" = 无粉丝牌（语义，非兜底）
-        if badgename:
-            badgelevel = parse_int(medal.get("level"))
-            if badgelevel is None:
-                anomalies.note(f"badgelevel 无法解析（{medal.get('level')!r}）→0")
-                badgelevel = 0
+        badge_name = str(medal.get("name") or "")  # "" = 无粉丝牌（语义，非兜底）
+        if badge_name:
+            badge_level = parse_int(medal.get("level"))
+            if badge_level is None:
+                anomalies.note(f"badge_level 无法解析（{medal.get('level')!r}）→0")
+                badge_level = 0
         else:
-            badgelevel = 0
+            badge_level = 0
 
-        return {
-            "uid": uid,
-            "username": username,
-            "avatar_url": str(face or ""),
-            "badgename": badgename,
-            "badgelevel": badgelevel,
-            "guardstat": BilibiliEventAdapter._guard_level_to_schema(medal.get("guard_level")),
-        }
-
-    @staticmethod
-    def _guard_level_to_schema(raw_level: Any) -> int:
-        # Guard level is inverted between Bilibili and our schema, deliberately.
-        # Bilibili: 3=舰长, 2=提督, 1=总督 (and 0=无). Schema: 1/2/3 = 舰长/提督/总督
-        # (0=无). So 3→1, 2→2, 1→3. Don't "simplify" this into identity.
-        try:
-            level = int(raw_level or 0)
-        except (TypeError, ValueError):
-            return 0
-        return {3: 1, 2: 2, 1: 3}.get(level, 0)
+        return schema.sender(
+            uid=uid,
+            username=username,
+            avatar_url=str(face or ""),
+            badge_name=badge_name,
+            badge_level=badge_level,
+            guard_level=schema.bili_guard_level_to_schema(medal.get("guard_level")),
+        )
 
 
 # ==================== Room info (init event) ====================
@@ -452,12 +450,11 @@ def room_info_from_api_response(api_response: Any, configured_room_id: int) -> D
     data = as_dict(api_response)
     room = as_dict(data.get("room_info"))
     anchor = as_dict(as_dict(data.get("anchor_info")).get("base_info"))
-    streamer_uid = parse_int(room.get("uid"))
     return room_info_dict(
         room_id=configured_room_id,
         title=room.get("title"),
-        streamer_uname=anchor.get("uname"),
-        streamer_uid=streamer_uid if streamer_uid is not None else 0,
+        streamer_username=anchor.get("uname"),
+        streamer_uid=room.get("uid"),
         streamer_avatar_url=anchor.get("face"),
         parent_area_name=room.get("parent_area_name"),
         area_name=room.get("area_name"),
@@ -473,7 +470,7 @@ def room_info_dict(
     *,
     room_id: int,
     title: Any = "",
-    streamer_uname: Any = "",
+    streamer_username: Any = "",
     streamer_uid: Any = 0,
     streamer_avatar_url: Any = "",
     parent_area_name: Any = "",
@@ -484,7 +481,7 @@ def room_info_dict(
     return {
         "room_id": room_id,
         "title": str(title or ""),
-        "streamer_uname": str(streamer_uname or ""),
+        "streamer_username": str(streamer_username or ""),
         "streamer_uid": uid if uid is not None else 0,
         "streamer_avatar_url": str(streamer_avatar_url or ""),
         "parent_area_name": str(parent_area_name or ""),

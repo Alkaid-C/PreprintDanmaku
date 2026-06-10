@@ -36,6 +36,7 @@ BACKEND_MANIFEST = BASE_DIR / "backend.json"
 # (see VersionGuard.check_frontend).
 INTEGRITY_FILES = (
     "util.py",
+    "schema.py",
     "initialization.py",
     "server.py",
     "credentials.py",
@@ -90,15 +91,6 @@ class AppConfig:
     debug_forward_errors: bool
     debug_error_dwell_seconds: int
 
-    # Event value conversion and pinned dwell
-    gift_price_to_yuan_divisor: int
-    cents_per_yuan: int
-    # SuperChat below this amount is Remark; this amount and above is Observation.
-    superchat_observation_threshold_yuan: int
-    # SuperChat dwell = Bilibili's authoritative `time` (seconds) × this multiplier.
-    superchat_dwell_multiplier: float
-    guard_dwell_seconds_by_schema_level: Dict[int, int]
-
     # Output files (resolved relative to this module)
     event_log_file: Path
     stats_output_file: Path
@@ -135,8 +127,6 @@ class ConfigLoader:
         "history_size", "subscriber_queue_size", "sse_heartbeat_seconds",
         "reconnect_delay_seconds", "reconnect_notice_dwell_seconds",
         "stream_end_report_dwell_seconds", "debug_forward_errors", "debug_error_dwell_seconds",
-        "gift_price_to_yuan_divisor", "cents_per_yuan", "superchat_observation_threshold_yuan",
-        "superchat_dwell_multiplier",
     )
     # Path keys: stored as bare names / relative paths in the TOML, resolved relative
     # to BASE_DIR. `frontend` is a directory one level up (../frontends/<name>, a
@@ -172,8 +162,6 @@ class ConfigLoader:
             raise ConfigError(f"配置文件 {path.name} 缺少必填项：{key}")
 
         try:
-            guard_raw = require("guard_dwell_seconds_by_schema_level")
-            guard = {int(k): int(v) for k, v in guard_raw.items()}
             kwargs: Dict[str, Any] = {key: require(key) for key in cls._TOML_SCALAR_FIELDS}
             kwargs.update({key: BASE_DIR / require(key) for key in cls._TOML_PATH_FIELDS})
             # `frontend` lives one level up (../frontends/<name>, a sibling of this
@@ -182,10 +170,7 @@ class ConfigLoader:
         except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise ConfigError(f"配置文件 {path.name} 的某个值格式不对：{exc}") from exc
 
-        return AppConfig(
-            guard_dwell_seconds_by_schema_level=guard,
-            **kwargs,
-        )
+        return AppConfig(**kwargs)
 
 
 class VersionGuard:

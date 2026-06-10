@@ -9,9 +9,9 @@
 #    · true / false 用来表示「是 / 否」，全小写、不加引号
 #    · # 号开头的是注释，给你看的，程序会忽略
 #
-#  ⚠ 文件下半部分「高级设置」用了成组的 [方括号] 段落，
-#    新手通常不用动。如果要加普通设置，请加在上半部分。
-#    任何 [方括号] 段落出现之前，否则会被算进那个段落里。
+#  ⚠ 文件下半部分「高级设置」以 [方括号] 段落开头，新手通常不用动。
+#    如果要加普通设置，请加在上半部分、也就是第一个 [方括号] 段落出现之前；
+#    否则会被算进那个段落里。
 # ============================================================
 
 
@@ -85,20 +85,3 @@ stream_end_report_dwell_seconds = 20
 debug_forward_errors = false
 # 报错提示停留多久（秒）
 debug_error_dwell_seconds = 30
-
-# 金额换算（一般不要动，改错会导致金额显示错误）
-# 礼物单价从「毫元」换算成「元」的除数
-gift_price_to_yuan_divisor = 1000
-# 一元等于多少分
-cents_per_yuan = 100
-# SuperChat 金额低于此值显示为 Remark，达到/超过显示为 Observation（元）
-superchat_observation_threshold_yuan = 30
-# SuperChat 置顶停留时长 = B 站官方按金额给的停留秒数 × 这个倍率（1.0 = 原样）
-superchat_dwell_multiplier = 1.0
-
-
-# 大航海置顶停留时长（秒），按等级：1=舰长 2=提督 3=总督
-[advanced.guard_dwell_seconds_by_schema_level]
-1 = 60
-2 = 600
-3 = 3600

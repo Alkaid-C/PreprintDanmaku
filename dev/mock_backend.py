@@ -25,6 +25,7 @@ from typing import Any, Dict, List
 # path so the backend modules below import flat, exactly as they do in-package.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 
+import schema
 from bilibili import BilibiliEventAdapter
 from server import EventHub, create_flask_app
 from stats import StatsTracker
@@ -112,6 +113,9 @@ def room_id_from_record(events: List[Dict[str, Any]]) -> int:
 
 
 def build_mock_config(room_id: int) -> SimpleNamespace:
+    # Only the AppConfig attributes the adapter / server actually read; the mock
+    # builds events through the real BilibiliEventAdapter, so they come out in the
+    # current docs/SCHEMA.md shape automatically.
     return SimpleNamespace(
         room_id=room_id,
         host=HOST,
@@ -122,23 +126,18 @@ def build_mock_config(room_id: int) -> SimpleNamespace:
         stream_end_report_dwell_seconds=20,
         debug_forward_errors=False,
         debug_error_dwell_seconds=30,
-        gift_price_to_yuan_divisor=1000,
-        cents_per_yuan=100,
-        superchat_observation_threshold_yuan=30,
-        superchat_dwell_multiplier=1.0,
-        guard_dwell_seconds_by_schema_level={1: 60, 2: 600, 3: 3600},
     )
 
 
 def build_init_event(room_id: int) -> Dict[str, Any]:
     return {
-        "type": "init",
-        "id": 0,
+        "type": schema.EventType.INIT,
+        "id": schema.INIT_EVENT_ID,
         "timestamp": hhmm(),
         "room_info": {
             "room_id": room_id,
             "title": "Mock replay from mock_record.txt",
-            "streamer_uname": "DanmakuHime Mock",
+            "streamer_username": "DanmakuHime Mock",
             "streamer_uid": 0,
             "streamer_avatar_url": "",
             "parent_area_name": "Mock",

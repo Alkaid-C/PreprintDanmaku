@@ -59,6 +59,7 @@ BACKEND_MANIFEST = BASE_DIR / "backend.json"
 # every backend source module, hashed and bound to backend.json.
 INTEGRITY_FILES = (
     "util.py",
+    "schema.py",
     "initialization.py",
     "server.py",
     "credentials.py",
@@ -88,6 +89,7 @@ VERSION_CONSTANTS = (
 # and the project-level docs/deps sit at the package root, mirroring the repo.
 _BACKEND_DIR_FILES = (
     "util.py",
+    "schema.py",
     "initialization.py",
     "server.py",
     "credentials.py",
