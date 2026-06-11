@@ -33,7 +33,7 @@ build.py          bundle assembler — folds the backend + chosen frontend(s) in
 backend/          the backend package: the 8 modules + build_backend.py + backend_version.json + config.toml
 frontends/<name>/ each swappable frontend package (built by frontends/build_frontend.py)
 dev/              dev-only tooling, NOT shipped: mock_backend.py + its mock_record.txt replay
-docs/             SCHEMA.md, RAW_DATA.md — reference docs, not shipped
+docs/             SCHEMA.md, bilibili_api_info/ — reference docs, not shipped
 dist/             build outputs (*.zip, gitignored)
 ```
 
@@ -62,5 +62,5 @@ Install dependencies with `python3 -m pip install -r requirements.txt` (lower-bo
 - **`backend/CLAUDE.md`** — backend internals: the eight modules, `config.toml` / `AppConfig`, the backend build/integrity mechanics.
 - **`frontends/CLAUDE.md`** — frontend-author guide: folder layout, `index.html` + `.project` truth sources, the target OBS runtime.
 - **`docs/SCHEMA.md`** — the authoritative front/back SSE field contract (see Architecture). The source of truth for event shapes and `API_VERSION`.
-- **`docs/RAW_DATA.md`** — reference for Bilibili's raw event formats (UserInfo, envelope, per-`cmd` payloads). The `§` citations in `bilibili.py`'s parse comments point here.
+- **`docs/bilibili_api_info/api_fact.md`** — reference for Bilibili's raw event formats (UserInfo, envelope, per-`cmd` payloads). The `§` citations in `bilibili.py`'s parse comments point here.
 - **`dev/mock_record.txt`** — a small real captured event sample (one event per line, a Python `repr` restored with `ast.literal_eval`) that `dev/mock_backend.py` replays over SSE for frontend development. It is also the realistic backend parser sample: all events in this file should parse successfully. Not shipped (`mock_backend.py` lives in `dev/`).

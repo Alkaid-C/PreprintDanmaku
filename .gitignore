@@ -3,4 +3,5 @@
 !requirements.txt
 *.zip
 credential.json
+docs/bilibili_api_info/bilibili-API-collect-backup
 __pycache__

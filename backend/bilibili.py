@@ -2,9 +2,11 @@
 """
 DanmakuHime — the Bilibili integration boundary.
 
-The only place that knows Bilibili's raw formats. Two kinds of translation live
-here, both turning fragile Bilibili payloads into the clean schema (see schema.py /
-docs/SCHEMA.md):
+The only place that knows Bilibili's raw formats — their raw event shapes (field
+paths, money units, the guard-level inversion) are documented in
+docs/bilibili_api_info/api_fact.md, which the parsers below don't restate. Two
+kinds of translation live here, both turning fragile Bilibili payloads into the
+clean schema (see schema.py / docs/SCHEMA.md):
   - live events: BilibiliEventAdapter maps DANMU_MSG / SEND_GIFT /
     SUPER_CHAT_MESSAGE / GUARD_BUY into typed events and publishes them.
   - room info: fetch_room_info() calls the room API (with retries) and
@@ -42,8 +44,7 @@ _CMD_SUPER_CHAT_MESSAGE = "SUPER_CHAT_MESSAGE"
 _CMD_GUARD_BUY = "GUARD_BUY"
 _CMD_PREPARING = "PREPARING"
 
-# A gift's `total_coin` is denominated in milli-yuan (毫元); divide by this to get
-# yuan (RAW_DATA §5.2/§5.3).
+# Gift money fields (total_coin / price) are in milli-yuan (毫元); ÷1000 = yuan.
 MILLIYUAN_PER_YUAN = 1000
 
 
@@ -146,7 +147,7 @@ class BilibiliEventAdapter:
         text = str(info[1])
 
         # Emoticon danmaku: info[0][13] is a dict carrying the image url and info[1]
-        # is its caption (RAW_DATA §4.1); plain danmaku has info[0][13] == '{}'.
+        # is its caption; plain danmaku has info[0][13] == '{}'.
         emoticon = info[0][13]
         if isinstance(emoticon, dict):
             url = emoticon.get("url")
@@ -174,7 +175,7 @@ class BilibiliEventAdapter:
 
     @staticmethod
     def _danmaku_uinfo(info: List[Any], anomalies: "_Anomalies") -> Dict[str, Any]:
-        """The unified UserInfo for a danmaku, at info[0][15].user (RAW_DATA §2.1).
+        """The unified UserInfo for a danmaku.
 
         Falls back to the legacy positional layout (info[2]=user, info[3]=medal)
         for pre-new-format / dirty payloads, shaped to look like a UserInfo so it
@@ -243,12 +244,10 @@ class BilibiliEventAdapter:
         }
 
     def _gift_value_yuan(self, data: Dict[str, Any], gift_name: str, anomalies: "_Anomalies") -> float:
-        """Yuan a gift counts for (RAW_DATA §5.2/§5.3).
-
-        Free gifts (`coin_type == 'silver'`) count 0; everything else counts
-        `total_coin` (milli-yuan). For blind boxes total_coin is already the opened
-        face value (not what was paid), and for normal gold gifts it equals
-        price × num — so a single branch covers both.
+        """Yuan a gift counts for: free gifts (`coin_type == 'silver'`) count 0,
+        everything else counts `total_coin`. One branch covers both blind boxes
+        (total_coin is the opened face value, not what was paid) and normal gold
+        gifts (where it equals price × num).
         """
         if str(data.get("coin_type") or "").lower() == "silver":
             return 0.0
@@ -264,7 +263,7 @@ class BilibiliEventAdapter:
             data.get("uinfo"), anomalies,
             flat_uid=data.get("uid"), flat_username=as_dict(data.get("user_info")).get("uname"),
         )
-        price_yuan = parse_int(data.get("price"))  # SC price is in yuan (RAW_DATA §5.1)
+        price_yuan = parse_int(data.get("price"))  # SC price is in yuan
         if price_yuan is None:
             anomalies.note(f"price 缺失/无法解析（{data.get('price')!r}）→0 元")
             price_yuan = 0
@@ -284,7 +283,7 @@ class BilibiliEventAdapter:
     @staticmethod
     def _superchat_dwell_seconds(raw_time: Any, anomalies: "_Anomalies") -> int:
         """Bilibili's authoritative SC display duration `time` (seconds), passed
-        through as-is (RAW_DATA §4.3), at least 1 second."""
+        through as-is, at least 1 second."""
         seconds = parse_int(raw_time)
         if seconds is None:
             anomalies.note(f"superchat time 缺失/无法解析（{raw_time!r})→0")
@@ -308,8 +307,8 @@ class BilibiliEventAdapter:
             anomalies.note(f"months 缺失/无效（{data.get('num')!r}）→1")
             months = 1
         # GUARD_BUY carries no UserInfo, so the event itself gives no avatar or fan
-        # medal (RAW_DATA §2.2). This is a known event-shape limit (not a fallback),
-        # so it is not warned about.
+        # medal. This is a known event-shape limit (not a fallback), so it is not
+        # warned about.
         # TODO: if avatar/medal are wanted, look them up later by uid via the user
         # profile API.
         sender_dict = schema.sender(
@@ -359,18 +358,15 @@ class BilibiliEventAdapter:
         flat_uid: Any = None,
         flat_username: Any = None,
     ) -> Dict[str, Any]:
-        """Build the schema `sender` from a unified UserInfo object (RAW_DATA §2).
+        """Build the schema `sender` from a unified UserInfo object. `flat_uid` /
+        `flat_username` are the event's top-level fields, used only as a fallback
+        when the UserInfo lacks them.
 
-        DANMU_MSG / SEND_GIFT / SUPER_CHAT_MESSAGE all carry this same shape, only at
-        different paths; GUARD_BUY has no UserInfo and is built by hand in _guard().
-        `flat_uid` / `flat_username` are an event's top-level fields, used only as a
-        fallback when the UserInfo lacks them (GIFT/SC carry both).
-
-        Honesty: uid/username/avatar are "必有" per RAW_DATA §2.3, so substituting a
-        placeholder for any of them is recorded on `anomalies`. An absent `medal`
-        (no fan badge) and a 0 `guard_level` are legitimate states, not fallbacks, so
-        they are silent. guard_level is read from medal.guard_level, never
-        user.guard.level (RAW_DATA §2.2 warning).
+        Honesty: uid/username/avatar are always present, so substituting a
+        placeholder for any of them is recorded on `anomalies`; an absent `medal`
+        (no fan badge) and a 0 `guard_level` are legitimate states, not fallbacks,
+        so they stay silent. guard_level is read from medal.guard_level, never
+        user.guard.level — these are easy to get wrong, hence the note.
         """
         uinfo = as_dict(uinfo)
         base = as_dict(uinfo.get("base"))
